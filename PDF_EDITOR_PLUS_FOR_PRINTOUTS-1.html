@@ -1,0 +1,3010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF N-Up Arranger → PDF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+  :root {
+    --bg:            #0d0f1e;
+    --panel:         #141833;
+    --card:          #1a1f3d;
+    --surface:       #212a52;
+    --surface-hover: #283264;
+    --border:        #2a3160;
+    --border-strong: #3a4380;
+    --accent:        #e94560;
+    --accent-dim:    #c23652;
+    --accent-glow:   rgba(233,69,96,0.38);
+    --accent-2:      #4a90d9;
+    --accent-2-light:#7ec8e3;
+    --success:       #46e96c;
+    --warn:          #e9a446;
+    --text:          #eceef5;
+    --text-dim:      #9298ba;
+    --text-faint:    #5a6088;
+    --radius-sm:     6px;
+    --radius-md:     10px;
+    --radius-lg:     16px;
+    --shadow-card:   0 2px 10px rgba(0,0,0,0.25);
+    --shadow-pop:    0 20px 60px rgba(0,0,0,0.55);
+    --font-display:  'Space Grotesk', system-ui, -apple-system, sans-serif;
+    --font-body:     'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-2-light);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0.9rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .logo-mark {
+    width: 26px; height: 26px; color: var(--accent-2-light); flex-shrink: 0;
+    animation: logo-pop-in-sm 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes logo-pop-in-sm {
+    0%   { opacity: 0; transform: scale(0.6) rotate(-15deg); }
+    60%  { opacity: 1; transform: scale(1.08) rotate(3deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  header h1 {
+    font-family: var(--font-display);
+    font-size: 1.28rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  header span.subtitle { font-size: 0.82rem; color: var(--text-dim); }
+
+  .home-btn {
+    background: var(--surface); border: 1px solid var(--border-strong); color: var(--text);
+    width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .home-btn:hover { background: var(--surface-hover); border-color: var(--accent-2); }
+  .home-btn .btn-icon { width: 16px; height: 16px; }
+
+  /* ── screens: home picker, N-Up workspace, and single-column tools all
+     share this show/hide pattern — exactly one carries .active at a time ── */
+  .home-screen, .workspace, .tool-screen { display: none; }
+  .home-screen.active { display: block; padding: 2rem 1.5rem; max-width: 640px; margin: 0 auto; }
+  .workspace.active {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 60px);
+  }
+  .tool-screen.active {
+    display: block;
+    padding: 2rem 1.5rem;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    box-sizing: border-box;
+  }
+  .tool-screen-inner { max-width: 480px; margin: 0 auto; }
+
+  .home-intro { font-size: 0.9rem; color: var(--text-dim); margin-bottom: 1.25rem; }
+  .tool-grid { display: flex; flex-direction: column; gap: 0.85rem; }
+  .tool-card {
+    display: flex; align-items: center; gap: 1rem;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 1.1rem;
+    box-shadow: var(--shadow-card);
+    cursor: pointer; text-align: left; width: 100%;
+    font-family: var(--font-body); color: inherit;
+    transition: border-color 0.15s, transform 0.12s;
+  }
+  .tool-card:hover { border-color: var(--accent-2); transform: translateY(-1px); }
+  .tool-card:active { transform: translateY(0) scale(0.99); }
+  .tool-card-icon {
+    width: 40px; height: 40px; flex-shrink: 0; color: var(--accent-2-light);
+    background: var(--surface); border-radius: var(--radius-sm); padding: 8px; box-sizing: border-box;
+  }
+  .tool-card-text h3 { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.2rem; }
+  .tool-card-text p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.4; }
+
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .sidebar::-webkit-scrollbar { width: 8px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+  .sidebar::-webkit-scrollbar-thumb:hover { background: var(--accent-2); }
+
+  .side-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.1rem;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.2s;
+  }
+  .side-card:hover { border-color: var(--border-strong); }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-dim);
+    margin-bottom: 0.9rem;
+  }
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--accent-2-light);
+    font-size: 0.64rem;
+    font-weight: 700;
+    margin-right: 0.55rem;
+    flex-shrink: 0;
+  }
+
+  .upload-zone {
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    padding: 1.6rem 1.2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(233,69,96,0.06);
+  }
+  .upload-zone input[type="file"] { display: none; }
+  .upload-zone .icon { width: 30px; height: 30px; margin: 0 auto 0.6rem; color: var(--accent-2-light); display: block; }
+  .upload-zone p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; }
+  .upload-zone p strong { color: var(--text); display: block; margin-bottom: 0.25rem; font-weight: 600; }
+
+  .page-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .page-list::-webkit-scrollbar { width: 6px; }
+  .page-list::-webkit-scrollbar-track { background: transparent; }
+  .page-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  .page-item {
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+    cursor: default;
+  }
+  .page-item.dragging { opacity: 0.35; }
+  .page-item.drag-over { background: var(--surface-hover); border-color: var(--accent-2); }
+  .drag-handle {
+    cursor: grab;
+    color: var(--text-faint);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 1px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .page-thumb {
+    width: 28px;
+    height: 20px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 2px;
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+  .page-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-item button {
+    background: none; border: none; color: var(--accent);
+    cursor: pointer; flex-shrink: 0; transition: transform 0.15s;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .page-item button:hover { transform: scale(1.15); }
+
+  label.row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  label.row select, label.row input[type="number"], label.row input[type="text"] {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 0.5rem 0.65rem;
+    font-size: 0.85rem;
+    font-family: var(--font-body);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  label.row select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%237ec8e3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7.5l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 15px;
+    padding-right: 2.1rem;
+    cursor: pointer;
+  }
+  label.row select:hover, label.row input[type="number"]:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+  label.row select:focus, label.row input[type="number"]:focus, label.row input[type="text"]:focus {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
+
+  input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
+  input[type="range"] {
+    height: 4px; border-radius: 2px; background: var(--surface); cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    cursor: pointer;
+    margin-top: -1px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4); cursor: pointer;
+  }
+
+  .mini-grid {
+    display: grid;
+    gap: 3px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px;
+    width: 92px;
+    margin: 0.6rem auto 0;
+  }
+  .mini-cell {
+    background: var(--surface);
+    border-radius: 2px;
+    aspect-ratio: 0.707;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    color: var(--accent-2-light);
+    font-weight: 700;
+  }
+
+  .btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    padding: 0.72rem;
+    border-radius: var(--radius-sm);
+    border: none;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.2s, background 0.2s, border-color 0.2s, opacity 0.2s;
+  }
+  .btn-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .btn.is-loading .btn-icon { animation: btn-spin 0.9s linear infinite; }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+    color: #fff;
+    box-shadow: 0 4px 16px var(--accent-glow);
+  }
+  .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 22px var(--accent-glow); transform: translateY(-1px); }
+  .btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--accent-2-light);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--accent-2); }
+  .btn-secondary:active:not(:disabled) { transform: scale(0.98); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+
+  .toolbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+  }
+  .toolbar span { font-size: 0.8rem; color: var(--text-dim); }
+  .zoom-control { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .zoom-control button {
+    background: var(--surface); border: 1px solid var(--border-strong); color: var(--text);
+    width: 28px; height: 28px; border-radius: var(--radius-sm); cursor: pointer; font-size: 1rem;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .zoom-control button:hover { background: var(--surface-hover); border-color: var(--accent-2); }
+  .zoom-control .zoom-val { font-size: 0.78rem; color: var(--text-dim); min-width: 40px; text-align: center; }
+
+  .preview-area {
+    flex: 1;
+    overflow: auto;
+    padding: 2.5rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background:
+      radial-gradient(ellipse 700px 500px at 50% 0%, rgba(74,144,217,0.06), transparent 65%),
+      var(--bg);
+  }
+  .preview-area::-webkit-scrollbar { width: 10px; height: 10px; }
+  .preview-area::-webkit-scrollbar-track { background: transparent; }
+  .preview-area::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+
+  .sheet-wrapper { transform-origin: top center; transition: transform 0.2s; animation: sheet-in 0.35s ease; }
+  @keyframes sheet-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .sheet {
+    background: #fff;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.6), 0 2px 10px rgba(0,0,0,0.4);
+    position: relative;
+    overflow: hidden;
+    border-radius: 2px;
+  }
+
+  .sheet-grid {
+    width: 100%; height: 100%;
+    display: grid;
+    position: absolute; top: 0; left: 0;
+  }
+
+  .sheet-cell {
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+  }
+
+  .sheet-cell canvas {
+    display: block;
+    image-rendering: high-quality;
+  }
+
+  .page-num-badge {
+    position: absolute;
+    bottom: 3px; right: 4px;
+    font-size: 6px; color: #999;
+    font-family: sans-serif;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.2s;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 999;
+  }
+
+  /* ── account box (header) ── */
+  .account-box {
+    margin-left: auto;
+    display: none;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.3rem 0.5rem 0.3rem 0.3rem;
+    transition: border-color 0.2s;
+  }
+  .account-box:hover { border-color: var(--border-strong); }
+  .account-avatar {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+  }
+  .account-name {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .signout-btn {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--accent-2-light);
+    font-size: 0.7rem;
+    padding: 0.32rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .signout-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── first-run onboarding ── */
+  .onboarding-overlay {
+    position: fixed; inset: 0; z-index: 3500;
+    background:
+      radial-gradient(ellipse 800px 500px at 50% 30%, rgba(74,144,217,0.08), transparent 60%),
+      var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 2rem 1.5rem;
+    overflow: hidden;
+  }
+  .onboarding-overlay.done { display: none; }
+
+  .onboarding-skip {
+    position: absolute; top: 1.25rem; right: 1.25rem;
+    background: none; border: none; color: var(--text-faint);
+    font-size: 0.8rem; cursor: pointer; padding: 0.5rem;
+    transition: color 0.15s;
+  }
+  .onboarding-skip:hover { color: var(--text-dim); }
+
+  .onboarding-viewport { width: 100%; max-width: 420px; overflow: hidden; }
+  .onboarding-track {
+    display: flex; width: 300%;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .onboarding-slide {
+    width: 33.333%; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; padding: 0 1.5rem; box-sizing: border-box;
+  }
+  .onboarding-icon {
+    width: 76px; height: 76px; color: var(--accent-2-light); margin-bottom: 1.75rem;
+    animation: logo-pop-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
+  }
+  .onboarding-slide h2 { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--text); margin-bottom: 0.75rem; }
+  .onboarding-slide p { font-size: 0.92rem; color: var(--text-dim); line-height: 1.6; max-width: 320px; }
+
+  .onboarding-dots { display: flex; gap: 0.5rem; margin-top: 2.5rem; }
+  .onboarding-dots .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); transition: background 0.2s, width 0.2s; }
+  .onboarding-dots .dot.active { background: var(--accent); width: 20px; border-radius: 4px; }
+
+  .onboarding-nav {
+    display: flex; align-items: center; gap: 0.75rem;
+    margin-top: 2.5rem; width: 100%; max-width: 320px;
+  }
+  .onboarding-nav .btn { width: auto; flex: 1; }
+
+  /* ── Google sign-in gate ── */
+  .auth-gate-overlay {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 800px 500px at 50% 30%, rgba(233,69,96,0.08), transparent 60%),
+      var(--bg);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .auth-gate-overlay.signed-in { display: none; }
+
+  .auth-gate-sheets { position: absolute; inset: 0; pointer-events: none; }
+  .ghost-sheet {
+    position: absolute;
+    width: 150px; height: 206px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    opacity: 0.5;
+  }
+  .ghost-sheet.s1 { top: 10%;      left: 9%;   transform: rotate(-11deg); animation: ghost-fade-in 0.6s ease 0.15s both; }
+  .ghost-sheet.s2 { bottom: 12%;   right: 11%; transform: rotate(8deg);   animation: ghost-fade-in 0.6s ease 0.3s both; }
+  .ghost-sheet.s3 { bottom: -70px; left: 50%;  transform: rotate(-4deg) translateX(-50%); animation: ghost-fade-in 0.6s ease 0.45s both; }
+  @keyframes ghost-fade-in { from { opacity: 0; } to { opacity: 0.5; } }
+
+  .auth-gate-card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem 2.25rem;
+    width: min(90vw, 360px);
+    text-align: center;
+    box-shadow: var(--shadow-pop);
+    animation: card-rise-in 0.5s ease 0.1s both;
+  }
+  @keyframes card-rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  .auth-gate-icon {
+    width: 40px; height: 40px; margin: 0 auto 0.9rem; color: var(--accent-2-light); display: block;
+    animation: logo-pop-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.25s both;
+  }
+  @keyframes logo-pop-in {
+    0%   { opacity: 0; transform: scale(0.5) rotate(-25deg); }
+    60%  { opacity: 1; transform: scale(1.12) rotate(4deg); }
+    80%  { transform: scale(0.96) rotate(-2deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  .auth-gate-card h2 { font-family: var(--font-display); font-size: 1.1rem; color: var(--text); margin-bottom: 0.5rem; font-weight: 700; }
+  .auth-gate-card p { font-size: 0.82rem; color: var(--text-dim); line-height: 1.5; margin-bottom: 1.25rem; }
+  .gsi-button-slot { display: flex; justify-content: center; min-height: 44px; }
+  .auth-gate-note { margin: 1rem 0 0; font-size: 0.72rem; color: var(--warn); line-height: 1.5; }
+  .auth-bypass-link {
+    display: none;
+    margin-top: 0.9rem;
+    font-size: 0.72rem;
+    color: var(--accent-2);
+    text-decoration: none;
+  }
+  .auth-bypass-link:hover { color: var(--accent-2-light); text-decoration: underline; }
+
+  /* ── trial status + paywall ── */
+  .trial-status { font-size: 0.72rem; color: var(--text-faint); text-align: center; min-height: 1.2em; }
+  .trial-status.low { color: var(--warn); }
+  .trial-status.pro { color: var(--success); font-weight: 600; }
+
+  .paywall-overlay {
+    position: fixed; inset: 0; background: rgba(5,6,15,0.88);
+    z-index: 2200; display: none;
+    align-items: center; justify-content: center;
+  }
+  .paywall-overlay.open { display: flex; }
+  .paywall-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2rem 2.25rem;
+    width: min(90vw, 380px); text-align: center;
+    box-shadow: var(--shadow-pop);
+  }
+  .paywall-card h2 { font-family: var(--font-display); font-size: 1.05rem; color: var(--text); margin: 0.25rem 0 0.5rem; font-weight: 700; }
+  .paywall-card p { font-size: 0.82rem; color: var(--text-dim); line-height: 1.5; margin-bottom: 1.1rem; }
+
+  .empty-state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 0.9rem; height: 100%; color: var(--text-faint); text-align: center;
+  }
+  .empty-state .big-icon { width: 68px; height: 68px; color: var(--text-faint); }
+  .empty-state h2 { font-family: var(--font-display); font-size: 1.05rem; color: var(--text-dim); font-weight: 600; }
+  .empty-state p { font-size: 0.88rem; max-width: 300px; line-height: 1.6; color: var(--text-faint); }
+
+  /* ── crop modal ── */
+  .crop-modal-overlay {
+    position: fixed; inset: 0; background: rgba(5,6,15,0.88);
+    z-index: 2000; display: none;
+    align-items: center; justify-content: center;
+  }
+  .crop-modal-overlay.open { display: flex; }
+  .crop-modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 1.25rem;
+    width: 94vw; max-width: 920px; max-height: 92vh;
+    display: flex; flex-direction: column; gap: 0.9rem;
+    box-shadow: var(--shadow-pop);
+  }
+  .crop-header {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .crop-header h2 { font-family: var(--font-display); font-size: 0.95rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 0.5rem; }
+  .crop-header button { background: none; border: none; color: var(--text-dim); cursor: pointer; transition: color 0.15s; display: flex; align-items: center; justify-content: center; padding: 4px; }
+  .crop-header button:hover { color: var(--accent); }
+  .crop-canvas-wrap {
+    flex: 1; overflow: hidden; border-radius: var(--radius-md);
+    background: var(--bg); display: flex;
+    align-items: center; justify-content: center;
+    min-height: 260px; max-height: 55vh; position: relative;
+    border: 1px solid var(--border);
+  }
+  #cropCanvas { cursor: crosshair; display: block; max-width: 100%; max-height: 55vh; }
+  .crop-footer { display: flex; flex-direction: column; gap: 0.6rem; }
+  .crop-dims { display: grid; grid-template-columns: repeat(4,1fr); gap: 0.5rem; }
+  .crop-dim-field { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.73rem; color: var(--text-dim); }
+  .crop-dim-field input {
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 5px;
+    color: var(--text); padding: 0.3rem 0.4rem; font-size: 0.8rem;
+    width: 100%; outline: none; font-family: var(--font-body);
+  }
+  .crop-dim-field input:focus { border-color: var(--accent); }
+  .crop-nav {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.78rem; color: var(--text-dim);
+  }
+  .crop-nav button {
+    background: var(--surface); border: 1px solid var(--border-strong); color: var(--text);
+    border-radius: var(--radius-sm); width: 26px; height: 26px; cursor: pointer; font-size: 0.9rem;
+    transition: background 0.15s;
+  }
+  .crop-nav button:hover { background: var(--surface-hover); }
+  .crop-active-badge {
+    display: inline-block; background: var(--accent); color: #fff;
+    border-radius: 8px; font-size: 0.65rem; padding: 0.1rem 0.4rem;
+    font-weight: 700; margin-left: 0.3rem; vertical-align: middle;
+  }
+
+  .range-section { display: none; }
+  .range-section.visible { display: block; }
+
+  .range-tabs {
+    display: flex;
+    gap: 0;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: 3px;
+    margin-bottom: 0.6rem;
+  }
+  .range-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 0.75rem;
+    font-family: var(--font-body);
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .range-tab.active { background: var(--surface); color: var(--text); font-weight: 600; }
+
+  .range-panel { display: none; }
+  .range-panel.active { display: block; }
+
+  .range-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .range-row input[type="number"] {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 0.4rem 0.5rem;
+    font-size: 0.82rem;
+    width: 70px;
+    outline: none;
+    flex-shrink: 0;
+    font-family: var(--font-body);
+  }
+  .range-row input[type="number"]:focus { border-color: var(--accent); }
+  .range-row span { font-size: 0.78rem; color: var(--text-faint); }
+
+  .range-custom-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+    outline: none;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .range-custom-input:focus { border-color: var(--accent); }
+  .range-custom-input.error { border-color: var(--accent); background: rgba(233,69,96,0.08); }
+
+  .range-info {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--accent-2);
+    min-height: 1.1em;
+  }
+  .range-info.warn { color: var(--warn); }
+  .range-info.ok   { color: var(--success); }
+
+  @media (max-width: 880px) {
+    .workspace.active { grid-template-columns: 1fr; height: auto; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 60vh; }
+    header { padding: 0.9rem 1.2rem; flex-wrap: wrap; }
+    header span.subtitle { display: none; }
+    .home-screen.active, .tool-screen.active { padding: 1.5rem 1rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="logoGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e94560"/>
+      <stop offset="1" stop-color="#4a90d9"/>
+    </linearGradient>
+    <symbol id="logoMark" viewBox="0 0 32 32">
+      <rect x="2" y="2" width="12" height="12" rx="3" fill="currentColor" opacity="0.4"/>
+      <rect x="18" y="2" width="12" height="12" rx="3" fill="currentColor" opacity="0.4"/>
+      <rect x="2" y="18" width="12" height="12" rx="3" fill="currentColor" opacity="0.4"/>
+      <rect x="18" y="18" width="12" height="12" rx="3" fill="url(#logoGradient)"/>
+    </symbol>
+    <symbol id="iconUpload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 15V4M12 4l-4 4M12 4l4 4"/>
+      <path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/>
+    </symbol>
+    <symbol id="iconCrop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2v14a2 2 0 002 2h14"/>
+      <path d="M18 22V8a2 2 0 00-2-2H2"/>
+    </symbol>
+    <symbol id="iconClose" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </symbol>
+    <symbol id="iconCheck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12l5 5L20 6"/>
+    </symbol>
+    <symbol id="iconPage" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/>
+      <path d="M15 2v5h5"/>
+    </symbol>
+    <symbol id="iconUndo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 11a9 9 0 1 1 2.64 6.36"/>
+      <path d="M3 4v7h7"/>
+    </symbol>
+    <symbol id="iconLock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="10" width="16" height="11" rx="2"/>
+      <path d="M8 10V7a4 4 0 018 0v3"/>
+    </symbol>
+    <symbol id="iconArrowUp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19V5M5 12l7-7 7 7"/>
+    </symbol>
+    <symbol id="iconMerge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="13" height="16" rx="1.5"/>
+      <rect x="9" y="6" width="13" height="16" rx="1.5"/>
+    </symbol>
+    <symbol id="iconImage" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <path d="M21 15l-5-5L5 21"/>
+    </symbol>
+    <symbol id="iconBack" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 18l-6-6 6-6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<script>
+/* ══════════════════════════════════════════════
+   FIREBASE — from the "Add a web app" screen in
+   Firebase Console (Project settings → General →
+   Your apps). This is a public per-app identifier,
+   not a secret — it's meant to be visible in client
+   code, same as the Google OAuth Client ID already
+   in this file. What actually protects your data is
+   firestore.rules, not keeping this hidden.
+══════════════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCQ6Xo98IIi_ruFLqT5SjYdw1Xssu3eXgc",
+  authDomain: "teak-formula-502206-n2.firebaseapp.com",
+  projectId: "teak-formula-502206-n2",
+  storageBucket: "teak-formula-502206-n2.firebasestorage.app",
+  messagingSenderId: "162728701613",
+  appId: "1:162728701613:web:0ea744637be9b921f16024",
+  measurementId: "G-EC0JEYCCY9"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
+
+<!-- ── first-run onboarding ── -->
+<div class="onboarding-overlay" id="onboardingOverlay">
+  <button class="onboarding-skip" id="onboardingSkip" type="button">Skip</button>
+  <div class="onboarding-viewport">
+    <div class="onboarding-track" id="onboardingTrack">
+      <div class="onboarding-slide">
+        <svg class="onboarding-icon" viewBox="0 0 32 32"><use href="#logoMark"/></svg>
+        <h2>Print smarter, not more</h2>
+        <p>PDF N-Up Arranger fits multiple pages onto one sheet — so you use less paper and less ink every time you print.</p>
+      </div>
+      <div class="onboarding-slide">
+        <svg class="onboarding-icon" viewBox="0 0 24 24"><use href="#iconUpload"/></svg>
+        <h2>Upload, arrange, done</h2>
+        <p>Drop in any PDF, pick a grid like 4 pages per sheet, and preview exactly how it'll print before you commit to paper.</p>
+      </div>
+      <div class="onboarding-slide">
+        <svg class="onboarding-icon" viewBox="0 0 24 24"><use href="#iconMerge"/></svg>
+        <h2>More than one tool</h2>
+        <p>Crop pages, auto-whiten dark scans to save ink, merge multiple PDFs into one, or add photos as new pages — all from the home screen. Your first 3 exports are free.</p>
+      </div>
+    </div>
+  </div>
+  <div class="onboarding-dots" id="onboardingDots">
+    <span class="dot active"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+  </div>
+  <div class="onboarding-nav">
+    <button class="btn btn-secondary" id="onboardingBack" type="button" style="visibility:hidden;">Back</button>
+    <button class="btn btn-primary" id="onboardingNext" type="button">Next</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   FIRST-RUN ONBOARDING
+   Three-slide intro shown before the sign-in gate. Purely a UX
+   layer — it doesn't gate anything, it just sits on top (higher
+   z-index than the auth gate) until dismissed.
+
+   PERSISTENCE: like the trial counter used to be, "has this
+   person already seen onboarding" is tracked in memory only here,
+   so it reappears on every reload. That's a much lower-stakes gap
+   than trial data was — no security angle, just occasional
+   repetition — but if you want it to only show once per device,
+   add these two lines once you're hosting this yourself:
+     const seen = localStorage.getItem('pdfnup_onboarded') === 'true';
+     if (seen) document.getElementById('onboardingOverlay').classList.add('done');
+   ...and localStorage.setItem('pdfnup_onboarded','true') inside
+   closeOnboarding() below.
+══════════════════════════════════════════════ */
+const ONBOARDING_SLIDES = 3;
+let onboardingIndex = 0;
+
+function updateOnboardingUI() {
+  const pct = 100 / ONBOARDING_SLIDES;
+  document.getElementById('onboardingTrack').style.transform = `translateX(-${onboardingIndex * pct}%)`;
+  document.querySelectorAll('#onboardingDots .dot').forEach((d, i) => d.classList.toggle('active', i === onboardingIndex));
+  document.getElementById('onboardingBack').style.visibility = onboardingIndex === 0 ? 'hidden' : 'visible';
+  document.getElementById('onboardingNext').textContent = onboardingIndex === ONBOARDING_SLIDES - 1 ? 'Get Started' : 'Next';
+}
+
+function closeOnboarding() {
+  document.getElementById('onboardingOverlay').classList.add('done');
+}
+
+document.getElementById('onboardingNext').addEventListener('click', () => {
+  if (onboardingIndex < ONBOARDING_SLIDES - 1) { onboardingIndex++; updateOnboardingUI(); }
+  else { closeOnboarding(); }
+});
+document.getElementById('onboardingBack').addEventListener('click', () => {
+  if (onboardingIndex > 0) { onboardingIndex--; updateOnboardingUI(); }
+});
+document.getElementById('onboardingSkip').addEventListener('click', closeOnboarding);
+
+updateOnboardingUI();
+</script>
+
+<div class="progress-bar" id="progressBar" style="width:0%"></div>
+
+<!-- ── Google sign-in gate ── -->
+<div class="auth-gate-overlay" id="authGateOverlay">
+  <div class="auth-gate-sheets" aria-hidden="true">
+    <div class="ghost-sheet s1"></div>
+    <div class="ghost-sheet s2"></div>
+    <div class="ghost-sheet s3"></div>
+  </div>
+  <div class="auth-gate-card">
+    <svg class="auth-gate-icon" viewBox="0 0 32 32"><use href="#logoMark"/></svg>
+    <h2>PDF N-Up Arranger</h2>
+    <p>Sign in with your Google account to continue.</p>
+    <div id="googleSignInButton" class="gsi-button-slot"></div>
+    <p class="auth-gate-note" id="authGateNote"></p>
+    <a href="#" id="authBypassLink" class="auth-bypass-link">Continue without signing in →</a>
+  </div>
+</div>
+
+<header>
+  <button class="home-btn" id="homeBtn" type="button" title="Home" style="display:none;">
+    <svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconBack"/></svg>
+  </button>
+  <svg class="logo-mark" viewBox="0 0 32 32"><use href="#logoMark"/></svg>
+  <h1>PDF N-Up Arranger</h1>
+  <span class="subtitle" id="headerSubtitle">Fit multiple PDF pages onto a single sheet and export as PDF</span>
+  <div class="account-box" id="accountBox">
+    <img id="accountAvatar" class="account-avatar" alt="">
+    <span id="accountName" class="account-name"></span>
+    <button id="signOutBtn" class="signout-btn" type="button">Sign out</button>
+  </div>
+</header>
+
+<!-- ── home screen: tool picker ── -->
+<div class="home-screen" id="homeScreen">
+  <p class="home-intro">Pick a tool to get started.</p>
+  <div class="tool-grid">
+    <button class="tool-card" data-tool="nup" type="button">
+      <svg class="tool-card-icon" viewBox="0 0 32 32"><use href="#logoMark"/></svg>
+      <div class="tool-card-text">
+        <h3>N-Up Arranger</h3>
+        <p>Fit multiple pages onto one printed sheet</p>
+      </div>
+    </button>
+    <button class="tool-card" data-tool="merge" type="button">
+      <svg class="tool-card-icon" viewBox="0 0 24 24"><use href="#iconMerge"/></svg>
+      <div class="tool-card-text">
+        <h3>Merge PDFs</h3>
+        <p>Combine multiple PDFs into one file, in any order</p>
+      </div>
+    </button>
+    <button class="tool-card" data-tool="images" type="button">
+      <svg class="tool-card-icon" viewBox="0 0 24 24"><use href="#iconImage"/></svg>
+      <div class="tool-card-text">
+        <h3>Add Images to PDF</h3>
+        <p>Insert photos or scans as new pages at the end</p>
+      </div>
+    </button>
+  </div>
+</div>
+
+<div class="workspace" id="nupWorkspace">
+  <div class="sidebar">
+
+    <!-- UPLOAD -->
+    <div class="side-card">
+      <div class="section-title"><span class="step-num">1</span>Upload PDF</div>
+      <div class="upload-zone" id="dropZone">
+        <label for="fileInput" style="cursor:pointer;display:block;">
+          <svg class="icon" viewBox="0 0 24 24"><use href="#iconUpload"/></svg>
+          <p><strong>Click or drag &amp; drop PDF file(s)</strong>All pages from uploaded PDFs will be extracted automatically.</p>
+          <input type="file" id="fileInput" accept=".pdf,application/pdf" multiple>
+        </label>
+      </div>
+      <div class="page-list" id="pageList" style="margin-top:0.75rem;"></div>
+      <div id="pageCount" style="font-size:0.75rem;color:var(--text-faint);margin-top:0.4rem;"></div>
+      <button class="btn btn-secondary" id="cropBtn"
+              style="display:none;margin-top:0.6rem;font-size:0.8rem;padding:0.45rem;">
+        <svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconCrop"/></svg>
+        <span class="btn-label">Crop Pages</span> <span id="cropActiveBadge" class="crop-active-badge" style="display:none;">ON</span>
+      </button>
+    </div>
+
+    <!-- PAGE RANGE -->
+    <div class="range-section side-card" id="rangeSection">
+      <div class="section-title"><span class="step-num">2</span>Page Range <span id="rangeTotalBadge" style="color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;margin-left:auto;"></span></div>
+      <div class="range-tabs">
+        <button class="range-tab active" data-panel="simple">From / To</button>
+        <button class="range-tab" data-panel="custom">Custom</button>
+        <button class="range-tab" data-panel="all">All pages</button>
+      </div>
+
+      <div class="range-panel active" id="panel-simple">
+        <div class="range-row">
+          <span>From</span>
+          <input type="number" id="rangeFrom" value="1" min="1">
+          <span>to</span>
+          <input type="number" id="rangeTo" value="1" min="1">
+        </div>
+      </div>
+
+      <div class="range-panel" id="panel-custom">
+        <input type="text" class="range-custom-input" id="rangeCustom"
+               placeholder="e.g. 1-3, 5, 8-10">
+        <div style="font-size:0.7rem;color:var(--text-faint);margin-top:0.3rem;">
+          Comma-separated pages or ranges. Example: <code style="color:var(--accent-2);">2-5, 7, 9-12</code>
+        </div>
+      </div>
+
+      <div class="range-panel" id="panel-all">
+        <div style="font-size:0.78rem;color:var(--text-faint);padding:0.3rem 0;">All extracted pages will be used.</div>
+      </div>
+
+      <div class="range-info" id="rangeInfo"></div>
+    </div>
+
+    <!-- OUTPUT SHEET -->
+    <div class="side-card">
+      <div class="section-title"><span class="step-num">3</span>Output Sheet</div>
+      <label class="row" style="margin-bottom:0.6rem;">
+        Sheet size
+        <select id="sheetSize">
+          <option value="A4">A4 (210 × 297 mm)</option>
+          <option value="Letter">Letter (216 × 279 mm)</option>
+          <option value="A3">A3 (297 × 420 mm)</option>
+          <option value="Legal">Legal (216 × 356 mm)</option>
+        </select>
+      </label>
+      <label class="row">
+        Sheet orientation
+        <select id="sheetOrientation">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- GRID -->
+    <div class="side-card">
+      <div class="section-title"><span class="step-num">4</span>Grid Layout</div>
+      <label class="row" style="margin-bottom:0.6rem;">
+        Columns
+        <input type="number" id="cols" value="4" min="1" max="12">
+      </label>
+      <label class="row">
+        Rows
+        <input type="number" id="rows" value="2" min="1" max="12">
+      </label>
+      <div style="font-size:0.75rem;color:var(--text-faint);margin-top:0.5rem;">
+        <span id="gridLabel">4 × 2</span> = <span id="totalCells">8</span> pages per sheet
+      </div>
+      <div class="mini-grid" id="miniGrid"></div>
+    </div>
+
+    <!-- OPTIONS -->
+    <div class="side-card">
+      <div class="section-title"><span class="step-num">5</span>Options</div>
+      <label class="row" style="flex-direction:row;align-items:center;gap:0.5rem;cursor:pointer;">
+        <input type="checkbox" id="showBorder" checked> Page borders
+      </label>
+      <label class="row" style="flex-direction:row;align-items:center;gap:0.5rem;cursor:pointer;margin-top:0.5rem;">
+        <input type="checkbox" id="showNumbers"> Page numbers
+      </label>
+      <label class="row" style="margin-top:0.6rem;">
+        Padding (mm)
+        <input type="number" id="padding" value="6" min="0" max="30">
+      </label>
+      <label class="row" style="margin-top:0.6rem;">
+        Gap (mm)
+        <input type="number" id="gap" value="3" min="0" max="20">
+      </label>
+      <label class="row" style="margin-top:0.6rem;">
+        Page rotation
+        <select id="rotation">
+          <option value="0">None (0°)</option>
+          <option value="auto">Auto-fit (rotate to fill cell)</option>
+          <option value="90">90° clockwise</option>
+          <option value="180">180°</option>
+          <option value="270">90° counter-clockwise</option>
+        </select>
+      </label>
+      <label class="row" style="margin-top:0.6rem;">
+        Image fit
+        <select id="fitMode">
+          <option value="contain">Contain — preserve ratio, allow gaps</option>
+          <option value="cover">Cover — fill cell, crop edges</option>
+          <option value="stretch">Stretch — fill cell exactly</option>
+        </select>
+      </label>
+      <label class="row" style="margin-top:0.6rem;">
+        Empty cell fill
+        <select id="emptyFill">
+          <option value="white">White</option>
+          <option value="color">Custom color</option>
+          <option value="checker">Checkerboard (transparent)</option>
+          <option value="cross">Crossed out</option>
+        </select>
+      </label>
+      <div id="emptyColorRow" style="display:none;margin-top:0.4rem;">
+        <label class="row" style="flex-direction:row;align-items:center;gap:0.5rem;">
+          <input type="color" id="emptyColor" value="#f0f0f0"
+                 style="width:32px;height:26px;border:none;background:none;cursor:pointer;padding:0;flex-shrink:0;">
+          <span style="font-size:0.78rem;color:var(--text-dim);">Pick a color</span>
+        </label>
+      </div>
+      <label class="row" style="margin-top:0.6rem;">
+        Sheet background
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.1rem;">
+          <input type="color" id="sheetBg" value="#ffffff"
+                 style="width:32px;height:26px;border:none;background:none;cursor:pointer;padding:0;flex-shrink:0;">
+          <span style="font-size:0.78rem;color:var(--text-dim);">Sheet background color</span>
+        </div>
+      </label>
+      <label class="row" style="margin-top:0.6rem;flex-direction:row;align-items:center;gap:0.5rem;cursor:pointer;">
+        <input type="checkbox" id="whitenDark"> Whiten dark backgrounds
+      </label>
+      <div id="whitenThresholdRow" style="display:none;margin-top:0.5rem;">
+        <label class="row">
+          Sensitivity <span id="whitenThresholdVal" style="color:var(--accent-2);font-weight:600;">130</span>
+          <input type="range" id="whitenThreshold" min="40" max="220" value="130" step="5">
+        </label>
+        <div style="font-size:0.7rem;color:var(--text-faint);margin-top:0.3rem;line-height:1.4;">
+          Pages that are mostly dark on average are flipped to a white background with dark text/lines, so black or dark PDFs don't drain your printer's ink. Normal light pages are left untouched. Higher sensitivity catches more borderline (medium-dark) pages.
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div style="display:flex;flex-direction:column;gap:0.5rem;">
+      <button class="btn btn-primary" id="renderBtn" disabled><svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 4.5v15l13-7.5-13-7.5z" fill="currentColor"/></svg><span class="btn-label">Render Preview</span></button>
+      <button class="btn btn-secondary" id="exportBtn" disabled><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg><span class="btn-label">Download PDF</span></button>
+      <div class="trial-status" id="trialStatus"></div>
+    </div>
+
+  </div>
+
+  <div class="main">
+    <div class="toolbar">
+      <span id="statusText">Upload a PDF to get started</span>
+      <div class="zoom-control">
+        <button id="zoomOut">−</button>
+        <span class="zoom-val" id="zoomLabel">70%</span>
+        <button id="zoomIn">+</button>
+      </div>
+    </div>
+    <div class="preview-area" id="previewArea">
+      <div class="empty-state">
+        <svg class="big-icon" viewBox="0 0 32 32"><use href="#logoMark"/></svg>
+        <h2>Nothing to preview yet</h2>
+        <p>Upload a PDF, set your grid — say 4 columns × 2 rows for 8 pages per sheet — then render the preview.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── merge PDFs tool ── -->
+<div class="tool-screen" id="mergeScreen">
+  <div class="tool-screen-inner">
+    <div class="side-card">
+      <div class="section-title">Merge PDFs</div>
+      <div class="upload-zone" id="mergeDropZone">
+        <label for="mergeFileInput" style="cursor:pointer;display:block;">
+          <svg class="icon" viewBox="0 0 24 24"><use href="#iconUpload"/></svg>
+          <p><strong>Click or drag &amp; drop 2 or more PDFs</strong>They merge in the order shown below — drag to reorder, or use the arrows.</p>
+          <input type="file" id="mergeFileInput" accept=".pdf,application/pdf" multiple>
+        </label>
+      </div>
+      <div class="page-list" id="mergeFileList" style="margin-top:0.75rem;"></div>
+      <div id="mergeCount" style="font-size:0.75rem;color:var(--text-faint);margin-top:0.4rem;"></div>
+    </div>
+    <button class="btn btn-primary" id="mergeBtn" disabled style="margin-top:1rem;">
+      <svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconMerge"/></svg>
+      <span class="btn-label">Merge &amp; Download</span>
+    </button>
+    <div class="trial-status" id="mergeTrialStatus"></div>
+  </div>
+</div>
+
+<!-- ── add images to PDF tool ── -->
+<div class="tool-screen" id="imagesScreen">
+  <div class="tool-screen-inner">
+    <div class="side-card">
+      <div class="section-title"><span class="step-num">1</span>Choose a PDF</div>
+      <div class="upload-zone" id="imagesPdfZone">
+        <label for="imagesPdfInput" style="cursor:pointer;display:block;">
+          <svg class="icon" viewBox="0 0 24 24"><use href="#iconUpload"/></svg>
+          <p><strong>Click or drag &amp; drop one PDF</strong>Images get added as new pages at the end of this file.</p>
+          <input type="file" id="imagesPdfInput" accept=".pdf,application/pdf">
+        </label>
+      </div>
+      <div id="imagesPdfName" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.5rem;"></div>
+    </div>
+    <div class="side-card" style="margin-top:1rem;">
+      <div class="section-title"><span class="step-num">2</span>Add images</div>
+      <div class="upload-zone" id="imagesImgZone">
+        <label for="imagesImgInput" style="cursor:pointer;display:block;">
+          <svg class="icon" viewBox="0 0 24 24"><use href="#iconImage"/></svg>
+          <p><strong>Click or drag &amp; drop photos (JPG/PNG)</strong>Each image becomes its own page, in the order shown below.</p>
+          <input type="file" id="imagesImgInput" accept="image/png,image/jpeg" multiple>
+        </label>
+      </div>
+      <div class="page-list" id="imagesImgList" style="margin-top:0.75rem;"></div>
+    </div>
+    <button class="btn btn-primary" id="imagesBtn" disabled style="margin-top:1rem;">
+      <svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconCheck"/></svg>
+      <span class="btn-label">Add Images &amp; Download</span>
+    </button>
+    <div class="trial-status" id="imagesTrialStatus"></div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const SHEET_SIZES = {
+  A4:     { w: 210, h: 297 },
+  Letter: { w: 216, h: 279 },
+  A3:     { w: 297, h: 420 },
+  Legal:  { w: 216, h: 356 },
+};
+const MM_TO_PX = 3.7795275591;
+const RENDER_DPI = 150; // px per inch for canvas rendering
+const MM_TO_IN = 0.0393701;
+
+const state = {
+  pages: [],          // { label, canvas }
+  zoom: 0.70,
+  rendered: false,
+  globalCrop: null,   // { x, y, w, h } as 0-1 ratios — applied to all pages without a per-page crop
+  pageCrops: {},      // { [pageIdx]: {x,y,w,h} } — per-page overrides
+  allSheetCells: null,
+  selectedIdx: null,
+  numSheets: 0,
+  sheetDims: null,
+  cfg: null,
+};
+
+/* ── helpers ── */
+function getSheetDimsMm() {
+  const size = SHEET_SIZES[document.getElementById('sheetSize').value];
+  const ori  = document.getElementById('sheetOrientation').value;
+  return ori === 'portrait' ? { w: size.w, h: size.h } : { w: size.h, h: size.w };
+}
+function getCfg() {
+  return {
+    cols:        parseInt(document.getElementById('cols').value)  || 4,
+    rows:        parseInt(document.getElementById('rows').value)  || 2,
+    padding:     parseFloat(document.getElementById('padding').value) || 6,
+    gap:         parseFloat(document.getElementById('gap').value) || 3,
+    showBorder:  document.getElementById('showBorder').checked,
+    showNumbers: document.getElementById('showNumbers').checked,
+    rotation:    document.getElementById('rotation').value,
+    fitMode:     document.getElementById('fitMode').value,
+    emptyFill:   document.getElementById('emptyFill').value,
+    emptyColor:  document.getElementById('emptyColor').value,
+    sheetBg:     document.getElementById('sheetBg').value,
+    whitenDark:      document.getElementById('whitenDark').checked,
+    whitenThreshold: parseInt(document.getElementById('whitenThreshold').value) || 130,
+  };
+}
+function setProgress(pct) {
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+function setStatus(txt) { document.getElementById('statusText').textContent = txt; }
+function setBtnLabel(btn, text) {
+  const label = btn.querySelector('.btn-label');
+  if (label) label.textContent = text; else btn.textContent = text;
+}
+
+/* ── mini grid preview ── */
+function updateMiniGrid() {
+  const cfg = getCfg();
+  const grid = document.getElementById('miniGrid');
+  grid.style.gridTemplateColumns = `repeat(${cfg.cols}, 1fr)`;
+  grid.style.gridTemplateRows    = `repeat(${cfg.rows}, 1fr)`;
+  grid.innerHTML = '';
+  for (let i = 0; i < cfg.cols * cfg.rows; i++) {
+    const c = document.createElement('div');
+    c.className = 'mini-cell';
+    c.textContent = i + 1;
+    grid.appendChild(c);
+  }
+  document.getElementById('gridLabel').textContent  = `${cfg.cols} × ${cfg.rows}`;
+  document.getElementById('totalCells').textContent = cfg.cols * cfg.rows;
+}
+
+/* ── range logic ── */
+let activeRangePanel = 'simple';
+
+document.querySelectorAll('.range-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    activeRangePanel = tab.dataset.panel;
+    document.querySelectorAll('.range-tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.range-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${activeRangePanel}`));
+    updateRangeInfo();
+  });
+});
+
+function parseCustomRange(str, total) {
+  const indices = new Set();
+  const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+  for (const part of parts) {
+    const m = part.match(/^(\d+)(?:-(\d+))?$/);
+    if (!m) return null;
+    const a = parseInt(m[1]);
+    const b = m[2] ? parseInt(m[2]) : a;
+    if (a < 1 || b > total || a > b) return null;
+    for (let i = a; i <= b; i++) indices.add(i - 1);
+  }
+  return [...indices].sort((a, b) => a - b);
+}
+
+function getSelectedIndices() {
+  const total = state.pages.length;
+  if (!total) return [];
+  if (activeRangePanel === 'all') {
+    return Array.from({ length: total }, (_, i) => i);
+  }
+  if (activeRangePanel === 'simple') {
+    const from = Math.max(1, parseInt(document.getElementById('rangeFrom').value) || 1);
+    const to   = Math.min(total, parseInt(document.getElementById('rangeTo').value) || total);
+    if (from > to) return [];
+    return Array.from({ length: to - from + 1 }, (_, i) => from - 1 + i);
+  }
+  if (activeRangePanel === 'custom') {
+    const str = document.getElementById('rangeCustom').value.trim();
+    if (!str) return Array.from({ length: total }, (_, i) => i);
+    return parseCustomRange(str, total) || [];
+  }
+  return [];
+}
+
+function updateRangeInfo() {
+  const total   = state.pages.length;
+  const info    = document.getElementById('rangeInfo');
+  const custom  = document.getElementById('rangeCustom');
+  if (!total) { info.textContent = ''; return; }
+
+  if (activeRangePanel === 'custom') {
+    const str = custom.value.trim();
+    if (!str) {
+      info.className = 'range-info';
+      info.textContent = `All ${total} pages will be used.`;
+      custom.classList.remove('error');
+      return;
+    }
+    const idx = parseCustomRange(str, total);
+    if (idx === null) {
+      info.className = 'range-info warn';
+      info.textContent = `Invalid range — use e.g. 1-3, 5, 8-10 (max page: ${total})`;
+      custom.classList.add('error');
+    } else {
+      info.className = 'range-info ok';
+      info.textContent = `✓ ${idx.length} page(s) selected`;
+      custom.classList.remove('error');
+    }
+    return;
+  }
+
+  const idx = getSelectedIndices();
+  info.className = idx.length ? 'range-info ok' : 'range-info warn';
+  info.textContent = idx.length
+    ? `✓ ${idx.length} page(s) selected`
+    : 'No pages in range — adjust the values.';
+}
+
+['rangeFrom','rangeTo'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateRangeInfo);
+});
+document.getElementById('rangeCustom').addEventListener('input', updateRangeInfo);
+
+function showRangeSection() {
+  const sec   = document.getElementById('rangeSection');
+  const total = state.pages.length;
+  sec.classList.add('visible');
+  document.getElementById('rangeTotalBadge').textContent = `(${total} pages total)`;
+  document.getElementById('rangeFrom').max = total;
+  document.getElementById('rangeTo').max   = total;
+  document.getElementById('rangeTo').value = total;
+  updateRangeInfo();
+}
+
+/* ── file handling ── */
+document.getElementById('fileInput').addEventListener('change', e => loadPDFs(e.target.files));
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); loadPDFs(e.dataTransfer.files); });
+
+async function loadPDFs(files) {
+  const pdfs = Array.from(files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+  if (!pdfs.length) return alert('Please upload PDF files.');
+
+  /* free previous canvases to release GPU/CPU memory */
+  state.pages.forEach(p => { p.canvas.width = 0; p.canvas.height = 0; });
+  state.pages = [];
+  state.globalCrop = null;
+  state.pageCrops  = {};
+  document.getElementById('cropBtn').style.display = 'none';
+  document.getElementById('cropActiveBadge').style.display = 'none';
+  setProgress(5);
+  setStatus('Loading PDF…');
+
+  let total = 0;
+  const allDocs = [];
+  for (const file of pdfs) {
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+    allDocs.push({ name: file.name, doc });
+    total += doc.numPages;
+  }
+
+  const CHUNK = 5;           /* yield to UI every N pages */
+  const MAX_DIM = 3000;      /* cap canvas px on longest side → prevents OOM */
+  let done = 0;
+
+  for (const { name, doc } of allDocs) {
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const rawVp = page.getViewport({ scale: 1 });
+
+      /* compute scale so the longest side ≤ MAX_DIM, capped at 2× for sharp rendering */
+      const maxScale = MAX_DIM / Math.max(rawVp.width, rawVp.height);
+      const scale    = Math.min(2, maxScale);
+
+      const vp      = page.getViewport({ scale });
+      const canvas  = document.createElement('canvas');
+      canvas.width  = Math.round(vp.width);
+      canvas.height = Math.round(vp.height);
+      const ctx     = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+      const label = doc.numPages > 1 ? `${name} p${p}` : name;
+      state.pages.push({ label, canvas });
+      done++;
+      setProgress(5 + 85 * done / total);
+      setStatus(`Loading… ${done} / ${total} pages`);
+
+      /* yield to browser every CHUNK pages so the tab doesn't freeze */
+      if (done % CHUNK === 0) await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  updatePageList();
+  showRangeSection();
+  document.getElementById('renderBtn').disabled = false;
+  document.getElementById('exportBtn').disabled = true;
+  document.getElementById('cropBtn').style.display = 'block';
+  setProgress(100);
+  setStatus(`${state.pages.length} page(s) loaded — set page range and render`);
+  setTimeout(() => setProgress(0), 600);
+}
+
+let dragSrcIndex = null;
+
+function updatePageList() {
+  const list = document.getElementById('pageList');
+  list.innerHTML = '';
+
+  state.pages.slice(0, 30).forEach((pg, i) => {
+    const item = document.createElement('div');
+    item.className = 'page-item';
+    item.draggable = true;
+    item.dataset.index = i;
+
+    /* drag handle */
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.textContent = '⠿';
+    handle.title = 'Drag to reorder';
+
+    /* thumbnail */
+    const thumb = document.createElement('canvas');
+    thumb.className = 'page-thumb';
+    thumb.width  = 28;
+    thumb.height = 20;
+    thumb.getContext('2d').drawImage(pg.canvas, 0, 0, 28, 20);
+
+    /* label */
+    const lbl = document.createElement('span');
+    lbl.title = pg.label;
+    lbl.textContent = `${i + 1}. ${pg.label}`;
+
+    /* delete button */
+    const del = document.createElement('button');
+    del.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24"><use href="#iconClose"/></svg>';
+    del.title = 'Remove page';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.pages.splice(i, 1);
+      updatePageList();
+      if (state.pages.length) showRangeSection();
+    });
+
+    /* drag events */
+    item.addEventListener('dragstart', (e) => {
+      dragSrcIndex = i;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', i);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      list.querySelectorAll('.page-item').forEach(el => el.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      list.querySelectorAll('.page-item').forEach(el => el.classList.remove('drag-over'));
+      if (i !== dragSrcIndex) item.classList.add('drag-over');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if (dragSrcIndex === null || dragSrcIndex === i) return;
+      const moved = state.pages.splice(dragSrcIndex, 1)[0];
+      state.pages.splice(i, 0, moved);
+      dragSrcIndex = null;
+      updatePageList();
+      showRangeSection();
+    });
+
+    item.appendChild(handle);
+    item.appendChild(thumb);
+    item.appendChild(lbl);
+    item.appendChild(del);
+    list.appendChild(item);
+  });
+
+  const extra = state.pages.length - 30;
+  document.getElementById('pageCount').textContent =
+    state.pages.length > 30 ? `…and ${extra} more pages` : '';
+}
+
+/* ── rotation + fit helper ──
+   Rotates src by deg (0/90/180/270) then scales into cellW×cellH using fitMode:
+     'contain' – show whole image, gaps allowed (default)
+     'cover'   – fill entire cell, crop edges
+     'stretch' – fill entire cell, may distort
+   Returns the output canvas. */
+function makeRotatedCanvas(src, deg, cellW, cellH, fitMode) {
+  fitMode = fitMode || 'contain';
+  const swap = deg === 90 || deg === 270;
+
+  /* step 1: rotate at full resolution so we can work in screen-space */
+  let rot;
+  if (deg === 0) {
+    rot = src;
+  } else {
+    const rW = swap ? src.height : src.width;
+    const rH = swap ? src.width  : src.height;
+    rot = document.createElement('canvas');
+    rot.width = rW; rot.height = rH;
+    const rc = rot.getContext('2d');
+    rc.imageSmoothingEnabled = true;
+    rc.imageSmoothingQuality = 'high';
+    rc.save();
+    if      (deg === 90)  { rc.translate(rW, 0);  rc.rotate(Math.PI / 2);  }
+    else if (deg === 180) { rc.translate(rW, rH); rc.rotate(Math.PI);      }
+    else if (deg === 270) { rc.translate(0, rH);  rc.rotate(-Math.PI / 2); }
+    rc.drawImage(src, 0, 0);
+    rc.restore();
+  }
+
+  /* step 2: scale rotated image into cell according to fitMode */
+  const rW = rot.width, rH = rot.height;
+  let cW, cH, dX, dY, dW, dH;
+
+  if (fitMode === 'stretch') {
+    cW = Math.round(cellW); cH = Math.round(cellH);
+    dX = 0; dY = 0; dW = cW; dH = cH;
+  } else if (fitMode === 'cover') {
+    cW = Math.round(cellW); cH = Math.round(cellH);
+    const sc = Math.max(cellW / rW, cellH / rH);
+    dW = Math.round(rW * sc); dH = Math.round(rH * sc);
+    dX = Math.round((cW - dW) / 2); dY = Math.round((cH - dH) / 2);
+  } else { /* contain */
+    const sc = Math.min(cellW / rW, cellH / rH);
+    cW = Math.round(rW * sc); cH = Math.round(rH * sc);
+    dX = 0; dY = 0; dW = cW; dH = cH;
+  }
+
+  const c = document.createElement('canvas');
+  c.width = cW; c.height = cH;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  if (fitMode === 'cover') {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, cW, cH); ctx.clip();
+  }
+
+  ctx.drawImage(rot, dX, dY, dW, dH);
+
+  if (fitMode === 'cover') ctx.restore();
+  return c;
+}
+
+function resolvedDeg(src, cellW, cellH, rotation) {
+  if (rotation === 'auto') {
+    const srcLandscape  = src.width  > src.height;
+    const cellLandscape = cellW > cellH;
+    return srcLandscape !== cellLandscape ? 90 : 0;
+  }
+  return parseInt(rotation) || 0;
+}
+
+/* ── empty cell fill ── */
+function makeEmptyCellCanvas(cellW, cellH, cfg) {
+  const w = Math.round(cellW), h = Math.round(cellH);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  if (cfg.emptyFill === 'color') {
+    ctx.fillStyle = cfg.emptyColor || '#f0f0f0';
+    ctx.fillRect(0, 0, w, h);
+  } else if (cfg.emptyFill === 'checker') {
+    const sq = Math.max(8, Math.round(Math.min(w, h) / 10));
+    for (let row = 0; row * sq < h; row++) {
+      for (let col = 0; col * sq < w; col++) {
+        ctx.fillStyle = (row + col) % 2 === 0 ? '#cccccc' : '#ffffff';
+        ctx.fillRect(col * sq, row * sq, sq, sq);
+      }
+    }
+  } else if (cfg.emptyFill === 'cross') {
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(w, h);
+    ctx.moveTo(w, 0); ctx.lineTo(0, h);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+  }
+  return c;
+}
+
+/* ── apply crop to a source canvas, returns a new (possibly cropped) canvas ──
+   Per-page crop overrides globalCrop for that page index. */
+function applyCrop(src, pageIdx) {
+  const crop = (pageIdx !== undefined && state.pageCrops[pageIdx] != null)
+    ? state.pageCrops[pageIdx]
+    : state.globalCrop;
+  if (!crop) return src;
+  const sx = Math.round(src.width  * crop.x);
+  const sy = Math.round(src.height * crop.y);
+  const sw = Math.max(1, Math.round(src.width  * crop.w));
+  const sh = Math.max(1, Math.round(src.height * crop.h));
+  const c  = document.createElement('canvas');
+  c.width  = sw; c.height = sh;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
+  return c;
+}
+
+/* ── whiten dark backgrounds: if a page is mostly dark on average, invert it
+   so the background prints white and the (previously light) foreground text
+   prints dark — saves ink and stays legible. Light pages are left untouched.
+   Always returns a NEW canvas; never mutates the source. ── */
+function applyWhitening(src, cfg) {
+  if (!cfg.whitenDark) return src;
+  const w = src.width, h = src.height;
+  if (!w || !h) return src;
+
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(src, 0, 0);
+
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  /* estimate average luminance by sampling (full scan on large canvases is slow) */
+  const maxSamples = 20000;
+  const totalPx    = w * h;
+  const pxStep     = Math.max(1, Math.floor(totalPx / maxSamples));
+  const byteStep   = pxStep * 4;
+  let sum = 0, count = 0;
+  for (let i = 0; i < d.length; i += byteStep) {
+    sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    count++;
+  }
+  const avgLum = count ? sum / count : 255;
+  if (avgLum >= cfg.whitenThreshold) return src;   /* already a light page — leave as-is */
+
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]     = 255 - d[i];
+    d[i + 1] = 255 - d[i + 1];
+    d[i + 2] = 255 - d[i + 2];
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return c;
+}
+
+/* ── build one sheet's cell data (returns array of {dataURL, pageNum|null}) ── */
+function buildSheetCells(selectedIdx, sheetIndex, totalCells, cellW, cellH, cfg) {
+  const cells = [];
+  for (let i = 0; i < totalCells; i++) {
+    const pageIdx = selectedIdx[sheetIndex * totalCells + i];
+    const pg = pageIdx !== undefined ? state.pages[pageIdx] : null;
+    if (pg) {
+      let src = applyCrop(pg.canvas, pageIdx);
+      src = applyWhitening(src, cfg);
+      const deg = resolvedDeg(src, cellW, cellH, cfg.rotation);
+      const c   = makeRotatedCanvas(src, deg, cellW, cellH, cfg.fitMode);
+      cells.push({ dataURL: c.toDataURL('image/jpeg', 0.93), pageNum: pageIdx + 1, dstW: c.width, dstH: c.height, empty: false });
+    } else {
+      const ec = makeEmptyCellCanvas(cellW, cellH, cfg);
+      cells.push({ dataURL: ec.toDataURL('image/png'), pageNum: null, dstW: ec.width, dstH: ec.height, empty: true });
+    }
+  }
+  return cells;
+}
+
+/* ── render preview ── */
+async function renderPreview() {
+  if (!state.pages.length) return;
+
+  const selectedIdx = getSelectedIndices();
+  if (!selectedIdx.length) {
+    setStatus('No pages selected — adjust the page range first.');
+    return;
+  }
+
+  const btn = document.getElementById('renderBtn');
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  setBtnLabel(btn, 'Rendering…');
+  setStatus('Rendering…');
+
+  const cfg      = getCfg();
+  const sheet    = getSheetDimsMm();
+  const sheetW   = sheet.w * MM_TO_PX;
+  const sheetH   = sheet.h * MM_TO_PX;
+  const padPx    = cfg.padding * MM_TO_PX;
+  const gapPx    = cfg.gap * MM_TO_PX;
+  const cellW    = (sheetW - padPx * 2 - gapPx * (cfg.cols - 1)) / cfg.cols;
+  const cellH    = (sheetH - padPx * 2 - gapPx * (cfg.rows - 1)) / cfg.rows;
+  const perSheet = cfg.cols * cfg.rows;
+  const numSheets = Math.ceil(selectedIdx.length / perSheet);
+
+  const area = document.getElementById('previewArea');
+  area.innerHTML = '';
+  state.allSheetCells = [];
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'sheet-wrapper';
+  wrapper.style.transform = `scale(${state.zoom})`;
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+  wrapper.style.alignItems = 'center';
+  wrapper.style.gap = '32px';
+
+  for (let s = 0; s < numSheets; s++) {
+    const cells = buildSheetCells(selectedIdx, s, perSheet, cellW, cellH, cfg);
+    state.allSheetCells.push(cells);
+
+    const sheetLabel = document.createElement('div');
+    sheetLabel.style.cssText = 'color:#555;font-size:11px;font-family:sans-serif;text-align:center;margin-bottom:-20px;';
+    sheetLabel.textContent = numSheets > 1 ? `Sheet ${s + 1} of ${numSheets}` : '';
+    wrapper.appendChild(sheetLabel);
+
+    const sheetEl = document.createElement('div');
+    sheetEl.className = 'sheet';
+    sheetEl.style.width  = sheetW + 'px';
+    sheetEl.style.height = sheetH + 'px';
+    sheetEl.style.flexShrink = '0';
+    sheetEl.style.background = cfg.sheetBg || '#ffffff';
+
+    const gridEl = document.createElement('div');
+    gridEl.className = 'sheet-grid';
+    gridEl.style.padding = padPx + 'px';
+    gridEl.style.gap     = gapPx + 'px';
+    gridEl.style.gridTemplateColumns = `repeat(${cfg.cols}, ${cellW}px)`;
+    gridEl.style.gridTemplateRows    = `repeat(${cfg.rows}, ${cellH}px)`;
+
+    cells.forEach(({ dataURL, pageNum, dstW, dstH }) => {
+      const cell = document.createElement('div');
+      cell.className = 'sheet-cell';
+      cell.style.width  = cellW + 'px';
+      cell.style.height = cellH + 'px';
+      cell.style.border = cfg.showBorder ? '0.5px solid #ccc' : 'none';
+
+      if (dataURL) {
+        const c = document.createElement('canvas');
+        c.width  = dstW; c.height = dstH;
+        c.style.width = dstW + 'px'; c.style.height = dstH + 'px';
+        const img = new Image();
+        img.src = dataURL;
+        img.onload = () => c.getContext('2d').drawImage(img, 0, 0);
+        cell.appendChild(c);
+      }
+
+      if (cfg.showNumbers && pageNum) {
+        const badge = document.createElement('div');
+        badge.className = 'page-num-badge';
+        badge.textContent = pageNum;
+        cell.appendChild(badge);
+      }
+      gridEl.appendChild(cell);
+    });
+
+    sheetEl.appendChild(gridEl);
+    wrapper.appendChild(sheetEl);
+  }
+
+  area.appendChild(wrapper);
+
+  state.rendered    = true;
+  state.sheetDims   = sheet;
+  state.cfg         = cfg;
+  state.selectedIdx = selectedIdx;
+  state.numSheets   = numSheets;
+
+  btn.disabled = false;
+  btn.classList.remove('is-loading');
+  setBtnLabel(btn, 'Render Preview');
+  document.getElementById('exportBtn').disabled = false;
+  setStatus(
+    numSheets > 1
+      ? `${numSheets} sheets · ${selectedIdx.length} pages · ${cfg.cols}×${cfg.rows} per sheet · ${sheet.w}×${sheet.h}mm`
+      : `${selectedIdx.length} pages on 1 sheet · ${cfg.cols}×${cfg.rows} grid · ${sheet.w}×${sheet.h}mm`
+  );
+}
+
+/* ── export → download PDF via jsPDF (multi-sheet, 150 DPI) ── */
+async function runExport() {
+  if (!state.rendered || !state.allSheetCells) return false;
+
+  const btn = document.getElementById('exportBtn');
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  setBtnLabel(btn, 'Building PDF…');
+
+  const { sheetDims, cfg, selectedIdx, numSheets } = state;
+
+  /* re-render all sheets at 150 DPI (higher than preview's 96 DPI) */
+  const PX_PER_MM = 150 / 25.4;
+  const swPx  = Math.round(sheetDims.w * PX_PER_MM);
+  const shPx  = Math.round(sheetDims.h * PX_PER_MM);
+  const padPx = cfg.padding * PX_PER_MM;
+  const gapPx = cfg.gap     * PX_PER_MM;
+  const cellW = (swPx - padPx * 2 - gapPx * (cfg.cols - 1)) / cfg.cols;
+  const cellH = (shPx - padPx * 2 - gapPx * (cfg.rows - 1)) / cfg.rows;
+  const perSheet = cfg.cols * cfg.rows;
+
+  const loadImg = url => new Promise(res => {
+    const img = new Image(); img.onload = () => res(img); img.src = url;
+  });
+
+  let ok = false;
+  try {
+    const { jsPDF } = window.jspdf;
+    const ori = sheetDims.w > sheetDims.h ? 'landscape' : 'portrait';
+    const doc = new jsPDF({ unit: 'mm', format: [sheetDims.w, sheetDims.h], orientation: ori });
+
+    for (let s = 0; s < numSheets; s++) {
+      if (s > 0) doc.addPage([sheetDims.w, sheetDims.h], ori);
+      setProgress(Math.round(100 * s / numSheets));
+      setStatus(`Building PDF: sheet ${s + 1} / ${numSheets}…`);
+      await new Promise(r => setTimeout(r, 0));   // yield so UI updates
+
+      /* build high-res cells for this sheet */
+      const cells = buildSheetCells(selectedIdx, s, perSheet, cellW, cellH, cfg);
+
+      /* composite sheet canvas */
+      const sc  = document.createElement('canvas');
+      sc.width  = swPx; sc.height = shPx;
+      const ctx = sc.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = cfg.sheetBg || '#ffffff';
+      ctx.fillRect(0, 0, swPx, shPx);
+
+      for (let i = 0; i < cells.length; i++) {
+        const { dataURL, pageNum, dstW, dstH } = cells[i];
+        const col = i % cfg.cols;
+        const row = Math.floor(i / cfg.cols);
+        const cx  = Math.round(padPx + col * (cellW + gapPx));
+        const cy  = Math.round(padPx + row * (cellH + gapPx));
+        const cw  = Math.round(cellW);
+        const ch  = Math.round(cellH);
+
+        if (cfg.showBorder) {
+          ctx.strokeStyle = '#cccccc';
+          ctx.lineWidth   = Math.max(1, Math.round(PX_PER_MM * 0.25));
+          ctx.strokeRect(cx, cy, cw, ch);
+        }
+
+        if (dataURL) {
+          const img = await loadImg(dataURL);
+          /* center the cell image inside the cell area */
+          const ix = Math.round(cx + (cw - dstW) / 2);
+          const iy = Math.round(cy + (ch - dstH) / 2);
+          ctx.save();
+          ctx.beginPath(); ctx.rect(cx, cy, cw, ch); ctx.clip();
+          ctx.drawImage(img, ix, iy, dstW, dstH);
+          ctx.restore();
+        }
+
+        if (cfg.showNumbers && pageNum) {
+          ctx.save();
+          ctx.fillStyle   = 'rgba(70,70,70,0.75)';
+          ctx.font        = `${Math.max(8, Math.round(cw * 0.05))}px sans-serif`;
+          ctx.textAlign   = 'right';
+          ctx.textBaseline= 'bottom';
+          ctx.fillText(String(pageNum), cx + cw - 4, cy + ch - 4);
+          ctx.restore();
+        }
+      }
+
+      doc.addImage(sc.toDataURL('image/jpeg', 0.93), 'JPEG', 0, 0, sheetDims.w, sheetDims.h);
+    }
+
+    setProgress(100);
+    doc.save('nup-layout.pdf');
+    setStatus(`PDF downloaded — ${numSheets} sheet(s) at 150 DPI`);
+    setTimeout(() => setProgress(0), 800);
+    ok = true;
+  } catch (err) {
+    console.error(err);
+    alert('PDF generation failed: ' + err.message);
+    setStatus('PDF export failed.');
+    setProgress(0);
+  }
+
+  btn.disabled = false;
+  btn.classList.remove('is-loading');
+  setBtnLabel(btn, 'Download PDF');
+  return ok;
+}
+
+/* ── trial gate: check first, generate, then consume only on success —
+   so a failed export never costs a free credit ── */
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  if (!state.rendered || !state.allSheetCells) return;
+  const precheck = await getTrialStatus();
+  if (precheck.needsSignIn || precheck.serverError) { openPaywall(precheck); return; }
+  if (!precheck.pro && (precheck.remaining ?? 0) <= 0) { openPaywall(precheck); return; }
+
+  const ok = await runExport();
+  if (ok) {
+    const status = await tryConsumeExport();
+    applyStatusToUI(status);
+  }
+});
+
+/* ── zoom ── */
+function applyZoom() {
+  const w = document.querySelector('.sheet-wrapper');
+  if (w) w.style.transform = `scale(${state.zoom})`;
+  document.getElementById('zoomLabel').textContent = Math.round(state.zoom * 100) + '%';
+}
+document.getElementById('zoomIn').addEventListener('click',  () => { state.zoom = Math.min(state.zoom + 0.1, 3);   applyZoom(); });
+document.getElementById('zoomOut').addEventListener('click', () => { state.zoom = Math.max(state.zoom - 0.1, 0.1); applyZoom(); });
+
+/* ── grid controls ── */
+['cols','rows','sheetSize','sheetOrientation'].forEach(id => {
+  document.getElementById(id).addEventListener('input',  updateMiniGrid);
+  document.getElementById(id).addEventListener('change', updateMiniGrid);
+});
+document.getElementById('renderBtn').addEventListener('click', renderPreview);
+
+/* ── emptyFill color picker toggle ── */
+document.getElementById('emptyFill').addEventListener('change', function () {
+  document.getElementById('emptyColorRow').style.display = this.value === 'color' ? 'block' : 'none';
+});
+
+/* ── whiten dark backgrounds toggle + sensitivity slider ── */
+document.getElementById('whitenDark').addEventListener('change', function () {
+  document.getElementById('whitenThresholdRow').style.display = this.checked ? 'block' : 'none';
+});
+document.getElementById('whitenThreshold').addEventListener('input', function () {
+  document.getElementById('whitenThresholdVal').textContent = this.value;
+});
+
+updateMiniGrid();
+</script>
+
+<!-- ── crop modal (must be in DOM before the script below) ── -->
+<div class="crop-modal-overlay" id="cropOverlay">
+  <div class="crop-modal">
+    <div class="crop-header">
+      <h2><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconCrop"/></svg>Crop Pages</h2>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="crop-nav">
+          <button id="cropPrevPage">‹</button>
+          <span id="cropPageLabel">Page 1 / 1</span>
+          <button id="cropNextPage">›</button>
+        </div>
+        <button id="cropModalClose"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconClose"/></svg></button>
+      </div>
+    </div>
+    <div class="crop-canvas-wrap" id="cropCanvasWrap">
+      <canvas id="cropCanvas"></canvas>
+    </div>
+    <div class="crop-footer">
+      <div style="font-size:0.73rem;color:var(--text-faint);">
+        Drag to draw a crop region on any page. Enter exact values below. Click <strong style="color:var(--text);">Apply to All Pages</strong> to use this crop for every page.
+      </div>
+      <div class="crop-dims">
+        <div class="crop-dim-field"><span>Left %</span><input type="number" id="cropX" value="0" min="0" max="99" step="0.1"></div>
+        <div class="crop-dim-field"><span>Top %</span><input type="number" id="cropY" value="0" min="0" max="99" step="0.1"></div>
+        <div class="crop-dim-field"><span>Width %</span><input type="number" id="cropW" value="100" min="1" max="100" step="0.1"></div>
+        <div class="crop-dim-field"><span>Height %</span><input type="number" id="cropH" value="100" min="1" max="100" step="0.1"></div>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="applyAllCrop" style="flex:1;padding:0.55rem;font-size:0.85rem;"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconCheck"/></svg>Apply to All Pages</button>
+        <button class="btn btn-secondary" id="applyPageCrop" style="flex:1;padding:0.55rem;font-size:0.85rem;"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconPage"/></svg>This Page Only</button>
+        <button class="btn btn-secondary" id="clearPageCrop" style="flex:1;padding:0.55rem;font-size:0.85rem;"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconClose"/></svg>Clear This Page</button>
+        <button class="btn btn-secondary" id="resetCrop" style="flex:1;padding:0.55rem;font-size:0.85rem;"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconUndo"/></svg>Clear All</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Upgrade / paywall modal ── -->
+<div class="paywall-overlay" id="paywallOverlay">
+  <div class="paywall-card">
+    <svg class="auth-gate-icon" viewBox="0 0 24 24"><use href="#iconLock"/></svg>
+    <h2>You're out of free exports</h2>
+    <p id="paywallMessage">You've used all <span id="paywallLimit">3</span> free PDF exports. Upgrade to Pro (<span id="proPriceLabel">₹99/year</span>) for unlimited exports.</p>
+    <a href="#" id="upgradeBtn" class="btn btn-primary" target="_blank" rel="noopener" style="display:flex;text-decoration:none;box-sizing:border-box;"><svg class="btn-icon" viewBox="0 0 24 24"><use href="#iconArrowUp"/></svg>Upgrade to Pro</a>
+    <button class="btn btn-secondary" id="paywallClose" type="button" style="margin-top:0.5rem;">Maybe later</button>
+    <p style="font-size:0.72rem;color:var(--text-faint);margin-top:0.9rem;line-height:1.5;">Already paid? Accounts are activated by hand after payment, usually within a day — just refresh this page once it's done.</p>
+    <p class="auth-gate-note" id="unlockNote"></p>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   CROP MODAL
+══════════════════════════════════════════════ */
+const cropState = { x: 0, y: 0, w: 1, h: 1 };   // ratios 0-1 on displayed canvas
+let cropPageIdx  = 0;                              // which page is previewed
+let cropDragMode = null;                           // 'new'|'move'|'tl'|'tr'|'bl'|'br'|'t'|'r'|'b'|'l'
+let cropDragStart = null;
+let cropDisplayScale = 1;                          // px-per-source-pixel on the display canvas
+
+const cropOverlay  = document.getElementById('cropOverlay');
+const cropCanvas   = document.getElementById('cropCanvas');
+const cropCtx      = cropCanvas.getContext('2d');
+
+function openCropModal() {
+  cropPageIdx = 0;
+  loadCropPage();
+  cropOverlay.classList.add('open');
+}
+document.getElementById('cropBtn').addEventListener('click', openCropModal);
+document.getElementById('cropModalClose').addEventListener('click', () => cropOverlay.classList.remove('open'));
+cropOverlay.addEventListener('click', e => { if (e.target === cropOverlay) cropOverlay.classList.remove('open'); });
+
+function loadCropPage() {
+  const pg = state.pages[cropPageIdx];
+  if (!pg) return;
+  document.getElementById('cropPageLabel').textContent = `Page ${cropPageIdx + 1} / ${state.pages.length}`;
+
+  /* fit into canvas wrap */
+  const wrap = document.getElementById('cropCanvasWrap');
+  const maxW = wrap.clientWidth  || 800;
+  const maxH = wrap.clientHeight || 480;
+  const scale = Math.min(maxW / pg.canvas.width, maxH / pg.canvas.height, 1);
+  cropDisplayScale = scale;
+
+  cropCanvas.width  = Math.round(pg.canvas.width  * scale);
+  cropCanvas.height = Math.round(pg.canvas.height * scale);
+  drawCropCanvas();
+}
+
+function drawCropCanvas() {
+  const pg = state.pages[cropPageIdx];
+  if (!pg) return;
+  cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+  cropCtx.drawImage(pg.canvas, 0, 0, cropCanvas.width, cropCanvas.height);
+
+  /* dim outside crop */
+  const bx = cropState.x * cropCanvas.width;
+  const by = cropState.y * cropCanvas.height;
+  const bw = cropState.w * cropCanvas.width;
+  const bh = cropState.h * cropCanvas.height;
+
+  cropCtx.fillStyle = 'rgba(0,0,0,0.5)';
+  cropCtx.fillRect(0, 0, cropCanvas.width, by);
+  cropCtx.fillRect(0, by + bh, cropCanvas.width, cropCanvas.height - by - bh);
+  cropCtx.fillRect(0, by, bx, bh);
+  cropCtx.fillRect(bx + bw, by, cropCanvas.width - bx - bw, bh);
+
+  /* crop box border */
+  cropCtx.strokeStyle = '#e94560';
+  cropCtx.lineWidth = 2;
+  cropCtx.setLineDash([]);
+  cropCtx.strokeRect(bx, by, bw, bh);
+
+  /* corner handles */
+  const hs = 8;
+  [[bx,by],[bx+bw,by],[bx,by+bh],[bx+bw,by+bh]].forEach(([hx,hy]) => {
+    cropCtx.fillStyle = '#fff';
+    cropCtx.fillRect(hx - hs/2, hy - hs/2, hs, hs);
+    cropCtx.strokeStyle = '#e94560';
+    cropCtx.lineWidth = 1.5;
+    cropCtx.strokeRect(hx - hs/2, hy - hs/2, hs, hs);
+  });
+
+  /* rule-of-thirds grid */
+  cropCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+  cropCtx.lineWidth = 0.5;
+  for (let t = 1; t <= 2; t++) {
+    cropCtx.beginPath();
+    cropCtx.moveTo(bx + bw * t / 3, by);
+    cropCtx.lineTo(bx + bw * t / 3, by + bh);
+    cropCtx.moveTo(bx, by + bh * t / 3);
+    cropCtx.lineTo(bx + bw, by + bh * t / 3);
+    cropCtx.stroke();
+  }
+
+  syncCropInputs();
+}
+
+function syncCropInputs() {
+  document.getElementById('cropX').value = +(cropState.x * 100).toFixed(1);
+  document.getElementById('cropY').value = +(cropState.y * 100).toFixed(1);
+  document.getElementById('cropW').value = +(cropState.w * 100).toFixed(1);
+  document.getElementById('cropH').value = +(cropState.h * 100).toFixed(1);
+}
+
+/* detect which part of crop box was clicked */
+const HANDLE = 10;
+function hitTest(mx, my) {
+  const bx = cropState.x * cropCanvas.width;
+  const by = cropState.y * cropCanvas.height;
+  const bw = cropState.w * cropCanvas.width;
+  const bh = cropState.h * cropCanvas.height;
+  const near = (a, b) => Math.abs(a - b) < HANDLE;
+  if (near(mx, bx) && near(my, by))          return 'tl';
+  if (near(mx, bx+bw) && near(my, by))       return 'tr';
+  if (near(mx, bx) && near(my, by+bh))       return 'bl';
+  if (near(mx, bx+bw) && near(my, by+bh))    return 'br';
+  if (near(my, by) && mx>bx && mx<bx+bw)     return 't';
+  if (near(my, by+bh) && mx>bx && mx<bx+bw)  return 'b';
+  if (near(mx, bx) && my>by && my<by+bh)     return 'l';
+  if (near(mx, bx+bw) && my>by && my<by+bh)  return 'r';
+  if (mx > bx && mx < bx+bw && my > by && my < by+bh) return 'move';
+  return 'new';
+}
+
+function canvasXY(e) {
+  const r = cropCanvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return [(clientX - r.left) / r.width, (clientY - r.top) / r.height];
+}
+
+cropCanvas.addEventListener('mousedown', startCropDrag);
+cropCanvas.addEventListener('touchstart', startCropDrag, { passive: false });
+
+function startCropDrag(e) {
+  e.preventDefault();
+  const [rx, ry] = canvasXY(e);
+  const mx = rx * cropCanvas.width;
+  const my = ry * cropCanvas.height;
+  cropDragMode  = hitTest(mx, my);
+  cropDragStart = { rx, ry, ...cropState };
+  if (cropDragMode === 'new') { cropState.x = rx; cropState.y = ry; cropState.w = 0.001; cropState.h = 0.001; }
+}
+
+window.addEventListener('mousemove', moveCropDrag);
+window.addEventListener('touchmove', moveCropDrag, { passive: false });
+
+function moveCropDrag(e) {
+  if (!cropDragMode || !cropDragStart) return;
+  e.preventDefault();
+  const [rx, ry] = canvasXY(e);
+  const dx = rx - cropDragStart.rx;
+  const dy = ry - cropDragStart.ry;
+  const s  = cropDragStart;
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const MIN = 0.01;
+
+  if (cropDragMode === 'new') {
+    const x1 = Math.min(s.x, rx), y1 = Math.min(s.y, ry);
+    const x2 = Math.max(s.x, rx), y2 = Math.max(s.y, ry);
+    cropState.x = clamp(x1, 0, 1 - MIN); cropState.y = clamp(y1, 0, 1 - MIN);
+    cropState.w = clamp(x2 - x1, MIN, 1 - cropState.x);
+    cropState.h = clamp(y2 - y1, MIN, 1 - cropState.y);
+  } else if (cropDragMode === 'move') {
+    cropState.x = clamp(s.x + dx, 0, 1 - s.w);
+    cropState.y = clamp(s.y + dy, 0, 1 - s.h);
+  } else {
+    let { x, y, w, h } = s;
+    if (cropDragMode.includes('r')) { w = clamp(w + dx, MIN, 1 - x); }
+    if (cropDragMode.includes('l')) { const nx = clamp(x + dx, 0, x + w - MIN); w += x - nx; x = nx; }
+    if (cropDragMode.includes('b')) { h = clamp(h + dy, MIN, 1 - y); }
+    if (cropDragMode.includes('t')) { const ny = clamp(y + dy, 0, y + h - MIN); h += y - ny; y = ny; }
+    Object.assign(cropState, { x, y, w, h });
+  }
+  drawCropCanvas();
+}
+
+window.addEventListener('mouseup',  () => { cropDragMode = null; cropDragStart = null; });
+window.addEventListener('touchend', () => { cropDragMode = null; cropDragStart = null; });
+
+/* numeric inputs → update box */
+['cropX','cropY','cropW','cropH'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    const x = parseFloat(document.getElementById('cropX').value) / 100;
+    const y = parseFloat(document.getElementById('cropY').value) / 100;
+    const w = parseFloat(document.getElementById('cropW').value) / 100;
+    const h = parseFloat(document.getElementById('cropH').value) / 100;
+    if ([x,y,w,h].some(isNaN)) return;
+    cropState.x = Math.max(0, Math.min(x, 1 - 0.01));
+    cropState.y = Math.max(0, Math.min(y, 1 - 0.01));
+    cropState.w = Math.max(0.01, Math.min(w, 1 - cropState.x));
+    cropState.h = Math.max(0.01, Math.min(h, 1 - cropState.y));
+    drawCropCanvas();
+  });
+});
+
+/* helper: update badge — show ON if any crop is active */
+function updateCropBadge() {
+  const anyActive = state.globalCrop ||
+    (state.pageCrops && Object.keys(state.pageCrops).length > 0);
+  document.getElementById('cropActiveBadge').style.display = anyActive ? 'inline-block' : 'none';
+}
+
+/* helper: load existing crop for the current page into cropState */
+function syncCropStateFromPage() {
+  const c = (state.pageCrops && state.pageCrops[cropPageIdx] != null)
+    ? state.pageCrops[cropPageIdx]
+    : state.globalCrop;
+  if (c) { Object.assign(cropState, c); }
+  else    { Object.assign(cropState, { x: 0, y: 0, w: 1, h: 1 }); }
+  drawCropCanvas();
+}
+
+/* when navigating pages, load their existing crop */
+document.getElementById('cropPrevPage').addEventListener('click', () => {
+  if (cropPageIdx > 0) { cropPageIdx--; loadCropPage(); syncCropStateFromPage(); }
+});
+document.getElementById('cropNextPage').addEventListener('click', () => {
+  if (cropPageIdx < state.pages.length - 1) { cropPageIdx++; loadCropPage(); syncCropStateFromPage(); }
+});
+
+/* apply to all pages */
+document.getElementById('applyAllCrop').addEventListener('click', () => {
+  state.globalCrop = { ...cropState };
+  state.pageCrops  = {};              // clear per-page overrides (global wins)
+  updateCropBadge();
+  cropOverlay.classList.remove('open');
+  setStatus(`✂ Global crop applied — click Render Preview to see it`);
+});
+
+/* apply to this page only */
+document.getElementById('applyPageCrop').addEventListener('click', () => {
+  state.pageCrops[cropPageIdx] = { ...cropState };
+  updateCropBadge();
+  cropOverlay.classList.remove('open');
+  setStatus(`✂ Crop applied to page ${cropPageIdx + 1} only — click Render Preview to see it`);
+});
+
+/* clear per-page crop for current page */
+document.getElementById('clearPageCrop').addEventListener('click', () => {
+  delete state.pageCrops[cropPageIdx];
+  syncCropStateFromPage();
+  updateCropBadge();
+  setStatus(`Crop cleared for page ${cropPageIdx + 1}.`);
+});
+
+/* clear all crops */
+document.getElementById('resetCrop').addEventListener('click', () => {
+  Object.assign(cropState, { x: 0, y: 0, w: 1, h: 1 });
+  state.globalCrop = null;
+  state.pageCrops  = {};
+  updateCropBadge();
+  drawCropCanvas();
+  setStatus('All crops cleared.');
+});
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   GOOGLE SIGN-IN
+   Uses Google Identity Services for the button/UI — authentication
+   itself happens on accounts.google.com, never in a form on this
+   page, so a real Google password is never typed into this site.
+   The resulting credential gets exchanged for a real Firebase Auth
+   session (see showSignedInUI / onAuthStateChanged below), which is
+   what firestore.rules actually trusts — not just whatever the page
+   claims about who's signed in.
+
+   SETUP REQUIRED before this works:
+   1. Go to https://console.cloud.google.com/apis/credentials
+   2. Create an OAuth Client ID → Application type "Web application".
+   3. Under "Authorized JavaScript origins" add the exact URL this
+      file will be hosted at (e.g. https://yourname.github.io).
+      Sign-in cannot work opened as a local file:// path, and can't
+      complete inside a chat preview — host it somewhere first.
+   4. Paste that Client ID into GOOGLE_CLIENT_ID below.
+   5. In Firebase Console → Authentication → Sign-in method, enable
+      Google as a provider. Without this step the Google button still
+      works, but the Firebase half of sign-in fails right after.
+
+   Sign-in persists across reloads and browser restarts by default —
+   that's Firebase Auth's own behavior, not something built here.
+══════════════════════════════════════════════ */
+const GOOGLE_CLIENT_ID = '162728701613-1mk1oe5pi9510fr9ne2sqom738fqtdvo.apps.googleusercontent.com';
+
+let currentUser = null; // { id, name, email, picture } once signed in
+
+function decodeJwt(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    );
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+/* Updates the UI for a signed-in Firebase Auth user — called both right
+   after a fresh sign-in, and automatically on page load if Firebase
+   already has a persisted session (see onAuthStateChanged below). */
+function showSignedInUI(user) {
+  currentUser = { id: user.uid, name: user.displayName, email: user.email, picture: user.photoURL };
+  document.getElementById('authGateOverlay').classList.add('signed-in');
+  const box = document.getElementById('accountBox');
+  box.style.display = 'flex';
+  document.getElementById('accountAvatar').src = currentUser.picture || '';
+  document.getElementById('accountName').textContent = currentUser.name || currentUser.email || 'Signed in';
+  initTrialDoc(user.uid, user.email);
+  updateTrialStatus();
+  showScreen('home');
+}
+
+/* Firebase Auth persists sign-in across reloads by default — this just
+   means the app actually checks for that on load, instead of showing
+   the gate every time regardless of whether someone's already signed
+   in. Fires once immediately with whatever the current state is (null
+   if nobody's signed in yet), then again on every future sign-in or
+   sign-out. */
+firebase.auth().onAuthStateChanged((user) => {
+  if (user) showSignedInUI(user);
+});
+
+async function onGoogleCredential(resp) {
+  const payload = decodeJwt(resp.credential);
+  if (!payload) {
+    document.getElementById('authGateNote').textContent = 'Sign-in failed — please try again.';
+    return;
+  }
+  /* Exchange the Google credential for a Firebase Auth session — this is
+     what lets firestore.rules trust request.auth.uid below, rather than
+     just believing whatever the page claims about who's signed in.
+     showSignedInUI() runs automatically once this resolves, via the
+     onAuthStateChanged listener above — no need to call it here too. */
+  try {
+    const firebaseCred = firebase.auth.GoogleAuthProvider.credential(resp.credential);
+    await firebase.auth().signInWithCredential(firebaseCred);
+  } catch (err) {
+    console.error(err);
+    const note = document.getElementById('authGateNote');
+    if (err.code === 'auth/operation-not-allowed') {
+      note.textContent = 'Google sign-in isn\'t turned on in Firebase yet — go to Firebase Console → Authentication → Sign-in method → enable Google.';
+    } else if (err.code === 'auth/unauthorized-domain') {
+      note.textContent = 'This site\'s domain isn\'t authorized in Firebase — add it under Authentication → Settings → Authorized domains.';
+    } else {
+      note.textContent = 'Could not complete sign-in: ' + (err.message || 'please try again.');
+    }
+  }
+}
+
+function signOutGoogle() {
+  currentUser = null;
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  firebase.auth().signOut().catch((e) => console.error(e));
+  document.getElementById('accountBox').style.display = 'none';
+  document.getElementById('authGateOverlay').classList.remove('signed-in');
+  updateTrialStatus();
+}
+document.getElementById('signOutBtn').addEventListener('click', signOutGoogle);
+
+document.getElementById('authBypassLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('authGateOverlay').classList.add('signed-in');
+});
+
+function initGoogleSignIn() {
+  if (!window.google || !google.accounts || !google.accounts.id) {
+    setTimeout(initGoogleSignIn, 50);   // library still loading — retry shortly
+    return;
+  }
+  const notConfigured = !GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE_CLIENT_ID') === 0;
+  if (notConfigured) {
+    document.getElementById('authGateNote').textContent =
+      "Sign-in isn't configured yet — set GOOGLE_CLIENT_ID near the bottom of the file to your own Google OAuth Client ID.";
+    document.getElementById('authBypassLink').style.display = 'inline-block';
+    return;
+  }
+  try {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: onGoogleCredential,
+      auto_select: false,
+    });
+    google.accounts.id.renderButton(
+      document.getElementById('googleSignInButton'),
+      { theme: 'filled_black', shape: 'pill', size: 'large', text: 'signin_with', width: 280 }
+    );
+  } catch (err) {
+    console.error(err);
+    document.getElementById('authGateNote').textContent = 'Google sign-in failed to load: ' + err.message;
+    document.getElementById('authBypassLink').style.display = 'inline-block';
+  }
+}
+initGoogleSignIn();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   TRIAL / PAYWALL
+   Trial counts and Pro status live in Firestore, keyed to the
+   Firebase Auth uid created when someone signs in (see
+   onGoogleCredential above) — so the count is the same on any
+   browser or device for that account. firestore.rules (not this
+   file) is what actually enforces the limit; the JS below just
+   reads/writes through it.
+
+   TRIAL_LIMIT here must match the number hardcoded in
+   firestore.rules — Firestore rules can't read a JS constant, so
+   if you change one, change the other too, or they can end up
+   disagreeing about the real limit.
+
+   PAYMENT — Razorpay, ₹99/year:
+   1. Razorpay Dashboard → Payment Links → Create Payment Link →
+      amount ₹99. No code, no webhook, works today.
+   2. Paste that link into UPGRADE_URL below.
+   Razorpay also has a "Subscriptions" product for true auto-
+   renewal — that needs a webhook + a bit of server code to react
+   to it automatically, the same category of thing as the Cloud
+   Functions you decided against earlier. This Payment Link route
+   gets you the same ₹99/year pricing without any of that; renewal
+   is just something you track and follow up on yourself once a
+   year, same spirit as the manual grant step below.
+
+   GRANTING PRO (with a one-year expiry): firestore.rules
+   deliberately never lets a signed-in account set its own
+   pro:true — otherwise anyone could open dev tools and grant
+   themselves Pro directly, no payment needed. After someone pays:
+   Firebase Console → Firestore Database → trials collection →
+   find their document (saved under their account's uid; the
+   email field is there to help you spot the right one) → set two
+   fields by hand:
+     pro           → true
+     proExpiresAt  → timestamp, exactly one year from today
+   (Use the "timestamp" field type in the Firestore Console editor,
+   not a plain string, or the expiry check below won't read it
+   correctly.) A minute per customer, no code. When it lapses, the
+   app asks them to renew rather than silently staying Pro forever
+   or silently reverting to leftover free trials.
+══════════════════════════════════════════════ */
+const TRIAL_LIMIT = 3;
+const UPGRADE_URL = 'https://rzp.io/rzp/OUWBxjE';
+const PRO_PRICE_LABEL = '₹99/year';
+
+function currentUid() {
+  const u = firebase.auth().currentUser;
+  return u ? u.uid : null;
+}
+
+/** Creates the trial doc at sign-in time (if it doesn't exist yet) with
+    the account's email on file — that's what the Razorpay webhook
+    matches a payment against. Without this, someone who signs in and
+    pays before ever exporting anything would have no document for the
+    webhook to find. Safe to call on every sign-in — a no-op if the doc
+    is already there. */
+async function initTrialDoc(uid, email) {
+  const ref = db.collection('trials').doc(uid);
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({ count: 0, pro: false, email: (email || '').toLowerCase() || null });
+    }
+  } catch (e) {
+    console.error('initTrialDoc failed:', e);
+    // Non-fatal — export/paywall flows still work either way, just
+    // without a matchable email on file until the first real export.
+  }
+}
+
+/** True only if pro is set AND proExpiresAt is a real timestamp still
+    in the future — a lapsed subscription is not "pro" just because the
+    flag was never manually cleared. */
+function isProActive(data) {
+  if (!data || !data.pro || !data.proExpiresAt) return false;
+  const ms = data.proExpiresAt.toDate ? data.proExpiresAt.toDate().getTime() : new Date(data.proExpiresAt).getTime();
+  return ms > Date.now();
+}
+
+const TRIAL_STATUS_IDS = ['trialStatus', 'mergeTrialStatus', 'imagesTrialStatus'];
+
+function applyStatusToUI(status) {
+  TRIAL_STATUS_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) applyStatusToElement(status, el);
+  });
+}
+
+function applyStatusToElement(status, el) {
+  if (status.serverError) {
+    el.textContent = 'Could not reach Firestore to update your trial status';
+    el.className = 'trial-status low';
+    return;
+  }
+  if (status.expired) {
+    el.textContent = 'Pro expired — renew to keep exporting';
+    el.className = 'trial-status low';
+    return;
+  }
+  if (status.pro) {
+    let label = '✓ Pro — unlimited exports';
+    if (status.proExpiresAt) {
+      const ms = status.proExpiresAt.toDate ? status.proExpiresAt.toDate().getTime() : new Date(status.proExpiresAt).getTime();
+      const daysLeft = Math.max(0, Math.ceil((ms - Date.now()) / 86400000));
+      label = `✓ Pro — expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    }
+    el.textContent = label;
+    el.className = 'trial-status pro';
+    return;
+  }
+  const limit = status.limit ?? TRIAL_LIMIT;
+  const remaining = status.remaining ?? limit;
+  el.textContent = `${remaining} of ${limit} free export${limit === 1 ? '' : 's'} left`;
+  el.className = 'trial-status' + (remaining <= 1 ? ' low' : '');
+}
+
+/** Read-only status check — does not consume anything. Used both to
+    display the count and, right before generating a PDF, to decide
+    whether it's even worth attempting. Shared across all three tools —
+    N-Up, Merge, and Add Images all draw from and count against the
+    same trial/Pro status per account. */
+async function getTrialStatus() {
+  const uid = currentUid();
+  if (!uid) return { pro: false, remaining: TRIAL_LIMIT, limit: TRIAL_LIMIT, needsSignIn: true };
+  try {
+    const snap = await db.collection('trials').doc(uid).get();
+    const data = snap.exists ? snap.data() : { count: 0, pro: false };
+    if (isProActive(data)) {
+      return { pro: true, remaining: null, limit: TRIAL_LIMIT, proExpiresAt: data.proExpiresAt };
+    }
+    if (data.pro) {
+      return { pro: false, remaining: 0, limit: TRIAL_LIMIT, expired: true };
+    }
+    return { pro: false, remaining: Math.max(0, TRIAL_LIMIT - (data.count || 0)), limit: TRIAL_LIMIT };
+  } catch (e) {
+    console.error(e);
+    return { pro: false, remaining: 0, limit: TRIAL_LIMIT, serverError: true };
+  }
+}
+
+async function updateTrialStatus() {
+  const status = await getTrialStatus();
+  if (status.needsSignIn) {
+    TRIAL_STATUS_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = `${TRIAL_LIMIT} of ${TRIAL_LIMIT} free exports left`;
+      el.className = 'trial-status';
+    });
+    return;
+  }
+  applyStatusToUI(status);
+}
+
+/** Checks and consumes a free-export credit in one atomic transaction.
+    Only call this AFTER a PDF has actually been generated — consuming
+    up front would charge a credit even if generation later fails.
+    Returns { allowed, pro, remaining, limit } — allowed is false (never
+    silently true) if there's no signed-in account, Firestore can't be
+    reached, or Pro has lapsed, so nothing gets through by accident. */
+async function tryConsumeExport() {
+  const uid = currentUid();
+  if (!uid) return { allowed: false, needsSignIn: true, limit: TRIAL_LIMIT };
+  const ref = db.collection('trials').doc(uid);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? snap.data() : { count: 0, pro: false };
+
+      if (isProActive(data)) return { allowed: true, pro: true, remaining: null, limit: TRIAL_LIMIT };
+
+      if (data.pro) {
+        /* Was Pro at some point, isn't active now — expired. Ask them
+           to renew rather than quietly handing back leftover trials
+           (and rather than attempting a write firestore.rules would
+           reject anyway, since resource.data.pro is still true here). */
+        return { allowed: false, pro: false, remaining: 0, limit: TRIAL_LIMIT, expired: true };
+      }
+
+      const used = data.count || 0;
+      if (used >= TRIAL_LIMIT) return { allowed: false, pro: false, remaining: 0, limit: TRIAL_LIMIT };
+
+      tx.set(ref, {
+        count: used + 1,
+        pro: false,
+        email: ((currentUser && currentUser.email) || '').toLowerCase() || null,
+      });
+      return { allowed: true, pro: false, remaining: TRIAL_LIMIT - (used + 1), limit: TRIAL_LIMIT };
+    });
+  } catch (e) {
+    console.error(e);
+    return { allowed: false, serverError: true, limit: TRIAL_LIMIT };
+  }
+}
+
+function openPaywall(status) {
+  document.getElementById('paywallLimit').textContent = (status && status.limit) || TRIAL_LIMIT;
+  document.getElementById('proPriceLabel').textContent = PRO_PRICE_LABEL;
+  const note = document.getElementById('unlockNote');
+  if (status && status.needsSignIn) note.textContent = 'Sign in with Google first, then try exporting again.';
+  else if (status && status.serverError) note.textContent = "Couldn't reach Firestore — try again in a moment.";
+  else if (status && status.expired) note.textContent = 'Your Pro subscription has expired.';
+  else note.textContent = '';
+  document.getElementById('paywallOverlay').classList.add('open');
+}
+function closePaywall() {
+  document.getElementById('paywallOverlay').classList.remove('open');
+}
+document.getElementById('paywallClose').addEventListener('click', closePaywall);
+document.getElementById('paywallOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('paywallOverlay')) closePaywall();
+});
+document.getElementById('upgradeBtn').addEventListener('click', (e) => {
+  const notConfigured = !UPGRADE_URL || UPGRADE_URL.indexOf('your-checkout-link') !== -1;
+  if (notConfigured) {
+    e.preventDefault();
+    document.getElementById('unlockNote').textContent = 'Payment link not set up yet — add your Razorpay Payment Link to UPGRADE_URL near the bottom of the file.';
+  } else {
+    document.getElementById('upgradeBtn').href = UPGRADE_URL;
+  }
+});
+
+updateTrialStatus();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   SCREEN NAVIGATION
+   One home screen (tool picker) and three tool screens, exactly one
+   of which carries .active at a time. showSignedInUI() (in the auth
+   script above) calls showScreen('home') right after sign-in.
+══════════════════════════════════════════════ */
+const SCREEN_IDS = { home: 'homeScreen', nup: 'nupWorkspace', merge: 'mergeScreen', images: 'imagesScreen' };
+function showScreen(name) {
+  Object.entries(SCREEN_IDS).forEach(([key, id]) => {
+    document.getElementById(id).classList.toggle('active', key === name);
+  });
+  document.getElementById('homeBtn').style.display = name === 'home' ? 'none' : 'flex';
+  document.getElementById('headerSubtitle').style.display = name === 'home' ? '' : 'none';
+}
+document.querySelectorAll('.tool-card').forEach((card) => {
+  card.addEventListener('click', () => showScreen(card.dataset.tool));
+});
+document.getElementById('homeBtn').addEventListener('click', () => showScreen('home'));
+
+/* ══════════════════════════════════════════════
+   MERGE PDFS
+   Uses pdf-lib (not the canvas/jsPDF path N-Up uses) since merging
+   should keep pages as real, selectable/searchable PDF content, not
+   flatten them into images. Shares the same trial/Pro gating as
+   every other export in the app — see tryConsumeExport above.
+══════════════════════════════════════════════ */
+let mergeFiles = [];
+let mergeDragSrcIndex = null;
+
+function updateMergeUI() {
+  const list = document.getElementById('mergeFileList');
+  list.innerHTML = '';
+  mergeFiles.forEach((file, i) => {
+    const item = document.createElement('div');
+    item.className = 'page-item';
+    item.draggable = true;
+
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.textContent = '⠿';
+    handle.title = 'Drag to reorder';
+
+    const label = document.createElement('span');
+    label.textContent = `${i + 1}. ${file.name}`;
+    label.title = file.name;
+
+    const upBtn = document.createElement('button');
+    upBtn.type = 'button';
+    upBtn.title = 'Move up';
+    upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (i > 0) { [mergeFiles[i - 1], mergeFiles[i]] = [mergeFiles[i], mergeFiles[i - 1]]; updateMergeUI(); }
+    });
+
+    const downBtn = document.createElement('button');
+    downBtn.type = 'button';
+    downBtn.title = 'Move down';
+    downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    downBtn.disabled = i === mergeFiles.length - 1;
+    downBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (i < mergeFiles.length - 1) { [mergeFiles[i], mergeFiles[i + 1]] = [mergeFiles[i + 1], mergeFiles[i]]; updateMergeUI(); }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.title = 'Remove';
+    del.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24"><use href="#iconClose"/></svg>';
+    del.addEventListener('click', (e) => { e.stopPropagation(); mergeFiles.splice(i, 1); updateMergeUI(); });
+
+    item.addEventListener('dragstart', () => { mergeDragSrcIndex = i; item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      list.querySelectorAll('.page-item').forEach((el) => el.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      list.querySelectorAll('.page-item').forEach((el) => el.classList.remove('drag-over'));
+      if (i !== mergeDragSrcIndex) item.classList.add('drag-over');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if (mergeDragSrcIndex === null || mergeDragSrcIndex === i) return;
+      const moved = mergeFiles.splice(mergeDragSrcIndex, 1)[0];
+      mergeFiles.splice(i, 0, moved);
+      mergeDragSrcIndex = null;
+      updateMergeUI();
+    });
+
+    item.append(handle, label, upBtn, downBtn, del);
+    list.appendChild(item);
+  });
+
+  document.getElementById('mergeCount').textContent =
+    mergeFiles.length === 0 ? '' : `${mergeFiles.length} file${mergeFiles.length === 1 ? '' : 's'} — merges in this order`;
+  document.getElementById('mergeBtn').disabled = mergeFiles.length < 2;
+}
+
+function addMergeFiles(fileList) {
+  Array.from(fileList).forEach((f) => {
+    if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) mergeFiles.push(f);
+  });
+  updateMergeUI();
+}
+
+document.getElementById('mergeFileInput').addEventListener('change', (e) => addMergeFiles(e.target.files));
+const mergeDropZone = document.getElementById('mergeDropZone');
+mergeDropZone.addEventListener('dragover', (e) => { e.preventDefault(); mergeDropZone.classList.add('drag-over'); });
+mergeDropZone.addEventListener('dragleave', () => mergeDropZone.classList.remove('drag-over'));
+mergeDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  mergeDropZone.classList.remove('drag-over');
+  addMergeFiles(e.dataTransfer.files);
+});
+
+function downloadBlob(bytes, filename) {
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function runMerge() {
+  const btn = document.getElementById('mergeBtn');
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  setBtnLabel(btn, 'Merging…');
+  let ok = false;
+  try {
+    const { PDFDocument } = PDFLib;
+    const merged = await PDFDocument.create();
+    for (const file of mergeFiles) {
+      const bytes = await file.arrayBuffer();
+      const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      pages.forEach((p) => merged.addPage(p));
+    }
+    downloadBlob(await merged.save(), 'merged.pdf');
+    ok = true;
+  } catch (err) {
+    console.error(err);
+    alert('Merge failed: ' + err.message);
+  }
+  btn.disabled = false;
+  btn.classList.remove('is-loading');
+  setBtnLabel(btn, 'Merge & Download');
+  return ok;
+}
+
+document.getElementById('mergeBtn').addEventListener('click', async () => {
+  if (mergeFiles.length < 2) return;
+  const precheck = await getTrialStatus();
+  if (precheck.needsSignIn || precheck.serverError) { openPaywall(precheck); return; }
+  if (!precheck.pro && (precheck.remaining ?? 0) <= 0) { openPaywall(precheck); return; }
+
+  const ok = await runMerge();
+  if (ok) {
+    const status = await tryConsumeExport();
+    applyStatusToUI(status);
+  }
+});
+
+/* ══════════════════════════════════════════════
+   ADD IMAGES TO PDF
+   Each image becomes its own new page, scaled to fit within margins
+   and appended at the end. Also pdf-lib, same trial/Pro gating.
+══════════════════════════════════════════════ */
+let imagesPdfFile = null;
+let imagesImgFiles = [];
+let imagesDragSrcIndex = null;
+
+function updateImagesUI() {
+  document.getElementById('imagesPdfName').textContent = imagesPdfFile ? `Selected: ${imagesPdfFile.name}` : '';
+
+  const list = document.getElementById('imagesImgList');
+  list.innerHTML = '';
+  imagesImgFiles.forEach((file, i) => {
+    const item = document.createElement('div');
+    item.className = 'page-item';
+    item.draggable = true;
+
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.textContent = '⠿';
+    handle.title = 'Drag to reorder';
+
+    const label = document.createElement('span');
+    label.textContent = `${i + 1}. ${file.name}`;
+    label.title = file.name;
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.title = 'Remove';
+    del.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24"><use href="#iconClose"/></svg>';
+    del.addEventListener('click', (e) => { e.stopPropagation(); imagesImgFiles.splice(i, 1); updateImagesUI(); });
+
+    item.addEventListener('dragstart', () => { imagesDragSrcIndex = i; item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      list.querySelectorAll('.page-item').forEach((el) => el.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      list.querySelectorAll('.page-item').forEach((el) => el.classList.remove('drag-over'));
+      if (i !== imagesDragSrcIndex) item.classList.add('drag-over');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if (imagesDragSrcIndex === null || imagesDragSrcIndex === i) return;
+      const moved = imagesImgFiles.splice(imagesDragSrcIndex, 1)[0];
+      imagesImgFiles.splice(i, 0, moved);
+      imagesDragSrcIndex = null;
+      updateImagesUI();
+    });
+
+    item.append(handle, label, del);
+    list.appendChild(item);
+  });
+
+  document.getElementById('imagesBtn').disabled = !imagesPdfFile || imagesImgFiles.length === 0;
+}
+
+document.getElementById('imagesPdfInput').addEventListener('change', (e) => {
+  if (e.target.files[0]) { imagesPdfFile = e.target.files[0]; updateImagesUI(); }
+});
+const imagesPdfZone = document.getElementById('imagesPdfZone');
+imagesPdfZone.addEventListener('dragover', (e) => { e.preventDefault(); imagesPdfZone.classList.add('drag-over'); });
+imagesPdfZone.addEventListener('dragleave', () => imagesPdfZone.classList.remove('drag-over'));
+imagesPdfZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  imagesPdfZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) { imagesPdfFile = e.dataTransfer.files[0]; updateImagesUI(); }
+});
+
+function addImageFiles(fileList) {
+  Array.from(fileList).forEach((f) => {
+    if (f.type === 'image/png' || f.type === 'image/jpeg') imagesImgFiles.push(f);
+  });
+  updateImagesUI();
+}
+document.getElementById('imagesImgInput').addEventListener('change', (e) => addImageFiles(e.target.files));
+const imagesImgZone = document.getElementById('imagesImgZone');
+imagesImgZone.addEventListener('dragover', (e) => { e.preventDefault(); imagesImgZone.classList.add('drag-over'); });
+imagesImgZone.addEventListener('dragleave', () => imagesImgZone.classList.remove('drag-over'));
+imagesImgZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  imagesImgZone.classList.remove('drag-over');
+  addImageFiles(e.dataTransfer.files);
+});
+
+async function runAddImages() {
+  const btn = document.getElementById('imagesBtn');
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  setBtnLabel(btn, 'Adding images…');
+  let ok = false;
+  try {
+    const { PDFDocument } = PDFLib;
+    const pdfBytes = await imagesPdfFile.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+
+    for (const imgFile of imagesImgFiles) {
+      const imgBytes = await imgFile.arrayBuffer();
+      const embedded = imgFile.type === 'image/png'
+        ? await pdfDoc.embedPng(imgBytes)
+        : await pdfDoc.embedJpg(imgBytes);
+
+      const page = pdfDoc.addPage();
+      const pageW = page.getWidth();
+      const pageH = page.getHeight();
+      const margin = 36;
+      const scale = Math.min((pageW - margin * 2) / embedded.width, (pageH - margin * 2) / embedded.height, 1);
+      const drawW = embedded.width * scale;
+      const drawH = embedded.height * scale;
+      page.drawImage(embedded, { x: (pageW - drawW) / 2, y: (pageH - drawH) / 2, width: drawW, height: drawH });
+    }
+
+    const outBytes = await pdfDoc.save();
+    downloadBlob(outBytes, imagesPdfFile.name.replace(/\.pdf$/i, '') + '-with-images.pdf');
+    ok = true;
+  } catch (err) {
+    console.error(err);
+    alert('Adding images failed: ' + err.message);
+  }
+  btn.disabled = false;
+  btn.classList.remove('is-loading');
+  setBtnLabel(btn, 'Add Images & Download');
+  return ok;
+}
+
+document.getElementById('imagesBtn').addEventListener('click', async () => {
+  if (!imagesPdfFile || imagesImgFiles.length === 0) return;
+  const precheck = await getTrialStatus();
+  if (precheck.needsSignIn || precheck.serverError) { openPaywall(precheck); return; }
+  if (!precheck.pro && (precheck.remaining ?? 0) <= 0) { openPaywall(precheck); return; }
+
+  const ok = await runAddImages();
+  if (ok) {
+    const status = await tryConsumeExport();
+    applyStatusToUI(status);
+  }
+});
+</script>
+</body>
+</html>
