@@ -28,7 +28,9 @@ jobs:
 
       - name: Generate Debug Keystore & Get SHA-1
         run: |
-          # Generate debug keystore (Cordova uses this default location)
+          # Create the .android directory first
+          mkdir -p ~/.android
+          # Generate debug keystore
           keytool -genkey -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US" -storepass android -keypass android
           # Print SHA-1 fingerprint
           echo "=================================================="
