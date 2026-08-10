@@ -1,4 +1,4 @@
-name: Build Android App
+name: Build HTML to APK
 
 on:
   push:
@@ -12,38 +12,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Prepare web folder
+      - name: Download web-to-apk tool
         run: |
-          mkdir -p www
-          cp index.html www/
+          wget -O web-to-apk.jar https://github.com/shreyas-londhe/web-to-apk/releases/download/v1.0/web-to-apk.jar
 
-      - name: Build APK with Capacitor
+      - name: Build APK
         run: |
-          npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init MyApp com.example.myapp --web-dir=www
-          npx cap add android
-          npx cap sync android
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          # Make sure your HTML file is named index.html
+          # If it has a different name, change this line
+          java -jar web-to-apk.jar --html index.html --name "MyApp" --output app.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: my-app
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: app.apk
