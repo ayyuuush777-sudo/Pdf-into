@@ -1,4 +1,4 @@
-name: Build Android App
+name: Build Android App with Cordova
 
 on:
   push:
@@ -15,17 +15,30 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 18
 
-      - name: Convert HTML to APK
-        uses: darkshredder/web-to-app-action@main
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          build-folder-path: "."           # 在当前目录找你的 HTML 文件
-          app-name: "MyApp"                # 你的 App 名称
-          output-folder-path: "my-apks"    # 存放 APK 的文件夹
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build with Cordova
+        run: |
+          npm install -g cordova
+          cordova create myapp com.example.myapp MyApp
+          cd myapp
+          rm -rf www
+          mkdir www
+          cp ../index.html www/index.html
+          cordova platform add android
+          cordova build android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: my-app
-          path: my-apks/                   # 与上面的 output 路径保持一致
+          path: myapp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
