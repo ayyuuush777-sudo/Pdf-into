@@ -29,11 +29,10 @@ jobs:
       - name: Build with Cordova
         run: |
           npm install -g cordova
-          cordova create myapp com.example.myapp MyApp
+          cordova create myapp com.example.myapp MyApp --copy-from .
           cd myapp
-          rm -rf www
-          mkdir www
           cp ../index.html www/index.html
+          cordova plugin add cordova-plugin-splashscreen
           cordova platform add android
           cordova build android
 
