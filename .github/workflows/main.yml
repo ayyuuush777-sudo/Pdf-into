@@ -26,11 +26,16 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Prepare web folder
+        run: |
+          mkdir -p www
+          cp index.html www/
+
       - name: Build APK with Capacitor
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init MyApp com.example.myapp --web-dir .
+          npx cap init MyApp com.example.myapp --web-dir=www
           npx cap add android
           npx cap sync android
           cd android
