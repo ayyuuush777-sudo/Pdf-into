@@ -26,30 +26,42 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Debug Keystore
-        id: cache-keystore
-        uses: actions/cache@v3
+      - name: Check if keystore exists in repo
+        id: check_keystore
+        run: |
+          mkdir -p keystore
+          if [ -f "keystore/debug.keystore" ]; then
+            echo "✅ Keystore found in repository!"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Keystore NOT found. Generating a new one..."
+            mkdir -p ~/.android
+            keytool -genkey -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US" -storepass android -keypass android
+            cp ~/.android/debug.keystore keystore/debug.keystore
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload generated keystore (Download this ONCE!)
+        if: steps.check_keystore.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
         with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v1
+          name: debug-keystore-file
+          path: keystore/debug.keystore
 
-      - name: Generate Debug Keystore (if not cached)
-        if: steps.cache-keystore.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/.android
-          keytool -genkey -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US" -storepass android -keypass android
-          echo "🆕 New keystore generated. SHA-1 will be different!"
-          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -i "SHA1"
-
-      - name: Get SHA-1 (from cached or newly generated)
+      - name: Print SHA-1 (Copy this to Google Console)
         run: |
           echo "=================================================="
-          echo "SHA-1 FINGERPRINT (Copy this to Google Cloud Console):"
-          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -i "SHA1"
+          echo "✅ COPY THIS EXACT SHA-1 TO GOOGLE CONSOLE:"
           echo "=================================================="
+          keytool -list -v -keystore keystore/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -i "SHA1"
+          echo "=================================================="
+          echo "📌 If you just generated this keystore, go to Actions -> download 'debug-keystore-file', then upload it to your repo inside the 'keystore' folder. This will lock the SHA forever!"
 
       - name: Build with Cordova
         run: |
+          # Copy the fixed keystore to where Cordova expects it
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
           npm install -g cordova
           cordova create myapp com.example.myapp MyApp --copy-from .
           cd myapp
