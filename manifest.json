@@ -1,10 +1,10 @@
 {
-  "id": ".",
+  "id": "/Pdf-into/",
   "name": "PDF N-Up Arranger",
   "short_name": "PDF N-Up",
   "description": "Arrange PDF pages for printing, merge PDFs, and add images as new pages — all in one tool.",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "/Pdf-into/",
+  "scope": "/Pdf-into/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0d0f1e",
