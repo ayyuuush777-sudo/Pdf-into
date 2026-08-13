@@ -1,77 +1,27 @@
-name: Build Android App with Cordova
+name: PWA to Android
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: PWABuilder Package
+        uses: pwabuilder/package@v1
         with:
-          node-version: 18
+          platform: android
+          output: ./packages
+          # If your manifest is not at root, specify path:
+          # manifestPath: ./manifest.json
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Check if keystore exists in repo
-        id: check_keystore
-        run: |
-          mkdir -p keystore
-          if [ -f "keystore/debug.keystore" ]; then
-            echo "✅ Keystore found in repository!"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Keystore NOT found. Generating a new one..."
-            mkdir -p ~/.android
-            keytool -genkey -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US" -storepass android -keypass android
-            cp ~/.android/debug.keystore keystore/debug.keystore
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload generated keystore (Download this ONCE!)
-        if: steps.check_keystore.outputs.exists == 'false'
+      - name: Upload APK + AAB
         uses: actions/upload-artifact@v4
         with:
-          name: debug-keystore-file
-          path: keystore/debug.keystore
-
-      - name: Print SHA-1 (Copy this to Google Console)
-        run: |
-          echo "=================================================="
-          echo "✅ COPY THIS EXACT SHA-1 TO GOOGLE CONSOLE:"
-          echo "=================================================="
-          keytool -list -v -keystore keystore/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -i "SHA1"
-          echo "=================================================="
-          echo "📌 If you just generated this keystore, go to Actions -> download 'debug-keystore-file', then upload it to your repo inside the 'keystore' folder. This will lock the SHA forever!"
-
-      - name: Build with Cordova
-        run: |
-          # Copy the fixed keystore to where Cordova expects it
-          mkdir -p ~/.android
-          cp keystore/debug.keystore ~/.android/debug.keystore
-          npm install -g cordova
-          cordova create myapp com.example.myapp MyApp --copy-from .
-          cd myapp
-          cp ../index.html www/index.html
-          cordova plugin add cordova-plugin-splashscreen
-          cordova platform add android
-          cordova build android
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: my-app
-          path: myapp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          name: android-packages
+          path: ./packages
