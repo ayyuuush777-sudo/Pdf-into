@@ -1,4 +1,4 @@
-name: PWA to Android
+name: Build PWA for Android
 
 on:
   push:
@@ -9,19 +9,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: PWABuilder Package
-        uses: pwabuilder/package@v1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          platform: android
-          output: ./packages
-          # If your manifest is not at root, specify path:
-          # manifestPath: ./manifest.json
+          node-version: 18
 
-      - name: Upload APK + AAB
+      - name: Install PWABuilder CLI
+        run: npm install -g @pwabuilder/cli
+
+      - name: Build Android package (APK + AAB)
+        run: |
+          npx pwabuilder package --platform android --project . --output ./android-build
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-packages
-          path: ./packages
+          path: ./android-build/*.{apk,aab}
